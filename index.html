@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Smart Route Planner</title>
+
+<script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
+
+<style>
+:root {
+    --primary:#007AFF;
+    --success:#34C759;
+    --danger:#FF3B30;
+    --bg:#F2F2F7;
+}
+body { font-family:-apple-system,sans-serif; background:var(--bg); margin:0; padding:15px; }
+.card { background:#fff; border-radius:15px; padding:15px; margin-bottom:15px; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+h2 { margin-top:0; font-size:18px; }
+
+textarea { width:100%; height:120px; border:1px solid #ddd; border-radius:10px; padding:10px; font-size:14px; }
+
+.input-group { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:10px; }
+
+.btn {
+    border:none; border-radius:8px; padding:12px 5px;
+    color:#fff; font-weight:bold; font-size:12px; cursor:pointer;
+}
+.btn-blue { background:var(--primary); }
+.btn-green { background:var(--success); }
+.btn-gray { background:#8E8E93; }
+
+.route-item { background:#fafafa; border-left:5px solid #ccc; padding:10px; margin-bottom:10px; border-radius:6px; }
+.priority-1 { border-left-color:var(--danger); }
+.priority-2 { border-left-color:orange; }
+
+.check-row { display:flex; gap:10px; }
+.check-row input { width:22px; height:22px; margin-top:4px; }
+
+.client-label { font-weight:bold; }
+.address { font-size:12px; color:#555; }
+
+.comment-box { width:100%; margin-top:5px; font-size:12px; padding:5px; border:1px solid #ddd; border-radius:5px; }
+
+.quick-notes { display:flex; gap:5px; margin-top:5px; }
+.note-btn { font-size:10px; background:#eee; border:1px solid #ccc; padding:3px 6px; border-radius:4px; }
+
+.hidden { display:none; }
+#loading { font-weight:bold; color:var(--primary); text-align:center; }
+</style>
+</head>
+
+<body>
+
+<div class="card">
+<h2>📥 Ввод данных</h2>
+<textarea id="textInput" placeholder="Вставьте текст или добавьте фото..."></textarea>
+
+<div class="input-group">
+<button class="btn btn-blue" onclick="fileInput.click()">🖼️ Фото (несколько)</button>
+<button class="btn btn-blue" onclick="cameraInput.click()">📷 Камера</button>
+<button class="btn btn-green" onclick="processData()">🚀 Построить</button>
+</div>
+
+<input type="file" id="fileInput" class="hidden" accept="image/*" multiple>
+<input type="file" id="cameraInput" class="hidden" accept="image/*" capture="environment">
+
+<div id="loading" class="hidden"></div>
+</div>
+
+<div id="segmentsContainer"></div>
+
+<div class="card">
+<h2>📋 Чек-лист</h2>
+<div id="checklistItems"></div>
+<hr>
+<button class="btn btn-blue" style="width:100%;margin-bottom:10px" onclick="generateResidualRoute()">🛑 Маршрут по остаткам</button>
+<button class="btn btn-gray" style="width:100%" onclick="copyReport()">📋 Скопировать отчет</button>
+</div>
+
+<script>
+let allPoints = [];
+let ocrQueue = [];
+let ocrInProgress = false;
+
+/* ---------- OCR ---------- */
+
+fileInput.onchange = () => startOCR(fileInput.files);
+cameraInput.onchange = () => startOCR(cameraInput.files);
+
+async function startOCR(files) {
+    if (!files.length || ocrInProgress) return;
+
+    ocrQueue = Array.from(files);
+    ocrInProgress = true;
+
+    document.getElementById('loading').classList.remove('hidden');
+    await processOCRQueue();
+    document.getElementById('loading').classList.add('hidden');
+
+    ocrInProgress = false;
+    processData();
+}
+
+async function processOCRQueue() {
+    const worker = await Tesseract.createWorker('deu+rus');
+
+    for (let i = 0; i < ocrQueue.length; i++) {
+        document.getElementById('loading').innerText =
+            `Обработка фото ${i + 1} из ${ocrQueue.length}...`;
+
+        const { data:{ text } } = await worker.recognize(ocrQueue[i]);
+        appendText(text);
+    }
+
+    await worker.terminate();
+}
+
+function appendText(text) {
+    const input = document.getElementById('textInput');
+    input.value += "\n" + text;
+}
+
+/* ---------- DATA ---------- */
+
+function processData() {
+    const lines = document.getElementById('textInput').value.split('\n');
+
+    const uniqueSet = new Set();
+    allPoints = [];
+
+    lines.forEach((line, idx) => {
+        const clean = line.trim();
+        if (!clean) return;
+
+        if (!/\d{5}/.test(clean)) return;
+
+        const normalized = clean.toLowerCase().replace(/\s+/g,' ');
+        if (uniqueSet.has(normalized)) return;
+        uniqueSet.add(normalized);
+
+        const priority = (clean.match(/(?:^|\s)([1-3])(?:\s|$)/)||[])[1] || 99;
+        const deadline = (clean.match(/\d{2}:\d{2}/)||[])[0] || null;
+
+        const isDoctor = /praxis|dr\.|klinik/i.test(clean);
+        const clientLabel = extractClientLabel(clean);
+
+        allPoints.push({
+            id: idx,
+            raw: clean,
+            clientLabel,
+            address: clean,
+            priority: Number(priority),
+            deadline,
+            isDoctor,
+            done:false,
+            comment:""
+        });
+    });
+
+    allPoints.sort((a,b)=>{
+        if (a.deadline && !b.deadline) return -1;
+        if (!a.deadline && b.deadline) return 1;
+        if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
+        return a.priority - b.priority;
+    });
+
+    render();
+}
+
+function extractClientLabel(text) {
+    if (/praxis|dr\.|klinik/i.test(text)) {
+        return text.split(',')[0];
+    }
+    return text.split(',')[0];
+}
+
+/* ---------- UI ---------- */
+
+function render() {
+    segmentsContainer.innerHTML = "";
+    checklistItems.innerHTML = "";
+
+    for (let i=0;i<allPoints.length;i+=9) {
+        const segment = allPoints.slice(i,i+9);
+        const btn = document.createElement('button');
+        btn.className="btn btn-green";
+        btn.style="width:100%;margin-bottom:10px;height:50px";
+        btn.innerText=`ЗАПУСТИТЬ СЕГМЕНТ ${Math.floor(i/9)+1}`;
+        btn.onclick=()=>openMaps(segment);
+        segmentsContainer.appendChild(btn);
+    }
+
+    allPoints.forEach(p=>{
+        const div=document.createElement('div');
+        div.className=`route-item priority-${p.priority}`;
+        div.innerHTML=`
+        <div class="check-row">
+            <input type="checkbox" ${p.done?'checked':''} onchange="toggleDone(${p.id})">
+            <div>
+                <div class="client-label">${p.isDoctor?'🏥':'🏠'} ${p.clientLabel}</div>
+                <div class="address">${p.address}</div>
+                <input class="comment-box" placeholder="Комментарий" value="${p.comment}"
+                       onchange="updateComment(${p.id},this.value)">
+                <div class="quick-notes">
+                    <button class="note-btn" onclick="setNote(${p.id},'Закрыто')">🚪</button>
+                    <button class="note-btn" onclick="setNote(${p.id},'Обед')">🕒</button>
+                </div>
+            </div>
+        </div>`;
+        checklistItems.appendChild(div);
+    });
+}
+
+/* ---------- ACTIONS ---------- */
+
+function openMaps(points){
+    const list=points.map(p=>encodeURIComponent(p.address));
+    const dest=list.pop();
+    const way=list.join('|');
+    window.open(`https://www.google.com/maps/dir/?api=1&origin=current+location&destination=${dest}&waypoints=${way}`);
+}
+
+function toggleDone(id){
+    const p=allPoints.find(x=>x.id===id);
+    p.done=!p.done;
+    render();
+}
+function updateComment(id,t){ allPoints.find(x=>x.id===id).comment=t; }
+function setNote(id,n){ allPoints.find(x=>x.id===id).comment=n; render(); }
+
+function generateResidualRoute(){
+    const rest=allPoints.filter(p=>!p.done);
+    if(rest.length) openMaps(rest); else alert("Все выполнено");
+}
+
+function copyReport(){
+    let r="ОТЧЕТ:\n";
+    allPoints.forEach(p=>{
+        r+=`${p.done?'✅':'❌'} ${p.clientLabel} — ${p.address} | ${p.comment}\n`;
+    });
+    navigator.clipboard.writeText(r);
+    alert("Скопировано");
+}
+</script>
+
+</body>
+</html>
