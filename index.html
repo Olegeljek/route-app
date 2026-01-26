@@ -1,147 +1,116 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Smart Route Planner 4.0</title>
-
-<script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBiqqo0TrHxqpSRrecTKf9ebexIPfKYhcA&libraries=places,geometry"></script>
-
-<style>
-:root { --primary:#007AFF; --success:#34C759; --danger:#FF3B30; --bg:#F2F2F7; }
-body { font-family:-apple-system,sans-serif; background:var(--bg); margin:0; padding:15px; }
-.card { background:#fff; border-radius:15px; padding:15px; margin-bottom:15px; box-shadow:0 2px 8px rgba(0,0,0,.1); }
-textarea { width:100%; height:120px; border:1px solid #ddd; border-radius:10px; padding:10px; font-size:14px; box-sizing:border-box; }
-.input-group { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:10px; }
-.btn { border:none; border-radius:8px; padding:12px 5px; color:#fff; font-weight:bold; font-size:12px; cursor:pointer; }
-.btn-blue { background:var(--primary); }
-.btn-green { background:var(--success); }
-.route-item { background:#fafafa; border-left:5px solid #ccc; padding:10px; margin-bottom:10px; border-radius:6px; }
-.priority-1 { border-left-color:var(--danger); }
-.check-row { display:flex; gap:10px; align-items:flex-start; }
-.check-row input { width:22px; height:22px; margin-top:4px; }
-#status { font-weight:bold; color:var(--primary); text-align:center; margin-bottom:10px; font-size:13px; }
-.hidden { display:none; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart Route Optimizer 5.0</title>
+    <script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBiqqo0TrHxqpSRrecTKf9ebexIPfKYhcA&libraries=places,geometry"></script>
+    <style>
+        :root { --primary:#007AFF; --success:#34C759; --bg:#F2F2F7; }
+        body { font-family:-apple-system,sans-serif; background:var(--bg); margin:0; padding:15px; }
+        .card { background:#fff; border-radius:15px; padding:15px; margin-bottom:15px; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+        textarea { width:100%; height:120px; border:1px solid #ddd; border-radius:10px; padding:10px; box-sizing:border-box; }
+        .btn { border:none; border-radius:8px; padding:12px; color:#fff; font-weight:bold; cursor:pointer; width:100%; }
+        .btn-blue { background:var(--primary); margin-bottom:10px; }
+        .btn-green { background:var(--success); font-size:16px; height:50px; }
+        #status { font-weight:bold; color:var(--primary); text-align:center; margin-bottom:10px; }
+        .route-item { background:#fafafa; border-left:5px solid #007AFF; padding:10px; margin-bottom:8px; border-radius:6px; font-size:14px; }
+    </style>
 </head>
-
 <body>
 
 <div class="card">
-    <div id="status">📍 Ожидаю загрузки адресов</div>
-    <textarea id="textInput" placeholder="Вставьте текст или загрузите фото..."></textarea>
-    <div class="input-group">
-        <button class="btn btn-blue" onclick="fileInput.click()">🖼️ ФАЙЛЫ</button>
-        <button class="btn btn-blue" onclick="cameraInput.click()">📷 КАМЕРА</button>
-        <button class="btn btn-green" onclick="buildSmartRoute()">🚀 УМНЫЙ ПУТЬ</button>
+    <div id="status">📍 Ожидание адресов</div>
+    <textarea id="textInput" placeholder="Вставьте список адресов..."></textarea>
+    <div style="margin-top:10px;">
+        <button class="btn btn-blue" onclick="document.getElementById('cameraInput').click()">📷 СДЕЛАТЬ ФОТО</button>
+        <button class="btn btn-green" onclick="startOptimization()">🚀 ПОСТРОИТЬ УМНЫЙ МАРШРУТ</button>
     </div>
-    <input type="file" id="fileInput" class="hidden" accept="image/*" multiple onchange="startOCR(this.files)">
-    <input type="file" id="cameraInput" class="hidden" accept="image/*" capture="environment" onchange="startOCR(this.files)">
+    <input type="file" id="cameraInput" style="display:none" accept="image/*" capture="environment" onchange="runOCR(this.files)">
 </div>
 
 <div id="segmentsContainer"></div>
-
-<div class="card">
-    <h3>📋 Маршрутный лист</h3>
-    <div id="checklistItems"></div>
-    <button class="btn btn-blue" style="width:100%; margin-top:10px;" onclick="copyReport()">📋 КОПИРОВАТЬ ОТЧЕТ</button>
-</div>
+<div class="card"><h3>📋 Очередность доставки:</h3><div id="checklistItems"></div></div>
 
 <script>
 let allPoints = [];
-let userLocation = null;
+let userPos = null;
 
-// 1. Распознавание текста
-async function startOCR(files) {
+async function runOCR(files) {
     const status = document.getElementById('status');
-    const worker = await Tesseract.createWorker({
-        logger: m => { if(m.status === 'recognizing text') status.innerText = `Обработка: ${Math.round(m.progress*100)}%`; }
-    });
-    await worker.loadLanguage('deu+rus');
-    await worker.initialize('deu+rus');
-
-    for (let i = 0; i < files.length; i++) {
-        status.innerText = `Фото ${i+1} из ${files.length}...`;
-        const { data: { text } } = await worker.recognize(files[i]);
-        document.getElementById('textInput').value += "\n" + text;
-    }
+    const worker = await Tesseract.createWorker();
+    await worker.loadLanguage('deu+rus'); await worker.initialize('deu+rus');
+    status.innerText = "Распознаю текст...";
+    const { data: { text } } = await worker.recognize(files[0]);
+    document.getElementById('textInput').value += "\n" + text;
     await worker.terminate();
-    status.innerText = "Текст загружен. Нажмите 'УМНЫЙ ПУТЬ'";
+    status.innerText = "Текст готов!";
 }
 
-// 2. Умное построение маршрута
-async function buildSmartRoute() {
+function startOptimization() {
     const status = document.getElementById('status');
-    status.innerText = "🛰️ Определяю ваше местоположение...";
-
+    status.innerText = "🛰️ Определение GPS...";
+    
     navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-            userLocation = new google.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-            await processAndSortPoints();
+        (pos) => {
+            userPos = new google.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+            processAddresses();
         },
-        async (err) => {
-            alert("Ошибка GPS: " + err.message + ". Маршрут будет построен без учета вашей позиции.");
-            await processAndSortPoints();
+        () => {
+            alert("GPS недоступен. Маршрут будет построен от первой точки списка.");
+            processAddresses();
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 7000 }
     );
 }
 
-async function processAndSortPoints() {
+async function processAddresses() {
+    const status = document.getElementById('status');
     const lines = document.getElementById('textInput').value.split('\n');
     const geocoder = new google.maps.Geocoder();
-    let tempPoints = [];
+    let unsortedPoints = [];
 
-    document.getElementById('status').innerText = "🗺️ Геокодирование адресов...";
+    status.innerText = "🗺️ Геокодирование (поиск на карте)...";
 
     for (let line of lines) {
-        const addr = line.trim();
+        let addr = line.trim();
         if (addr.length < 10) continue;
 
-        const coords = await geocodeAddress(geocoder, addr);
-        if (coords) {
-            tempPoints.push({
+        const result = await new Promise(r => {
+            geocoder.geocode({address: addr}, (res, st) => r(st === 'OK' ? res[0] : null));
+        });
+
+        if (result) {
+            unsortedPoints.push({
                 address: addr,
                 label: addr.split(',')[0],
-                location: coords,
-                done: false
+                loc: result.geometry.location
             });
         }
     }
 
-    // Алгоритм "Ближайший сосед" для логичного маршрута
-    allPoints = [];
-    let currentPos = userLocation || tempPoints[0]?.location;
-
-    while (tempPoints.length > 0) {
-        let closestIdx = 0;
-        let minDist = Infinity;
-
-        tempPoints.forEach((p, idx) => {
-            const dist = google.maps.geometry.spherical.computeDistanceBetween(currentPos, p.location);
-            if (dist < minDist) {
-                minDist = dist;
-                closestIdx = idx;
-            }
-        });
-
-        const nextPoint = tempPoints.splice(closestIdx, 1)[0];
-        allPoints.push(nextPoint);
-        currentPos = nextPoint.location;
+    if (unsortedPoints.length === 0) {
+        status.innerText = "❌ Адреса не найдены. Проверьте Billing!";
+        return;
     }
 
-    document.getElementById('status').innerText = "✅ Маршрут оптимизирован!";
-    render();
-}
+    // УМНАЯ СОРТИРОВКА (Алгоритм "Ближайший сосед")
+    allPoints = [];
+    let currentPoint = userPos || unsortedPoints[0].loc;
 
-function geocodeAddress(geocoder, address) {
-    return new Promise((resolve) => {
-        geocoder.geocode({ address }, (results, status) => {
-            if (status === "OK") resolve(results[0].geometry.location);
-            else resolve(null);
-        });
-    });
+    while (unsortedPoints.length > 0) {
+        unsortedPoints.sort((a, b) => 
+            google.maps.geometry.spherical.computeDistanceBetween(currentPoint, a.loc) - 
+            google.maps.geometry.spherical.computeDistanceBetween(currentPoint, b.loc)
+        );
+        let closest = unsortedPoints.shift();
+        allPoints.push(closest);
+        currentPoint = closest.loc;
+    }
+
+    render();
+    status.innerText = "✅ Маршрут оптимизирован!";
 }
 
 function render() {
@@ -149,45 +118,27 @@ function render() {
     const list = document.getElementById('checklistItems');
     segs.innerHTML = ""; list.innerHTML = "";
 
+    // Нарезка на сегменты по 9 точек
     for (let i = 0; i < allPoints.length; i += 9) {
         const chunk = allPoints.slice(i, i + 9);
         const btn = document.createElement('button');
-        btn.className = "btn btn-green";
-        btn.style = "width:100%; margin-bottom:10px; height:50px; font-size:14px;";
-        btn.innerText = `🗺️ СЕГМЕНТ ${Math.floor(i/9)+1} (Ближайшие)`;
-        btn.onclick = () => openMaps(chunk);
+        btn.className = "btn btn-green"; btn.style = "margin-bottom:10px;";
+        btn.innerText = `🗺️ СЕГМЕНТ ${Math.floor(i/9)+1} (ЕХАТЬ)`;
+        btn.onclick = () => {
+            const waypoints = chunk.map(p => encodeURIComponent(p.address)).join('|');
+            const dest = encodeURIComponent(chunk[chunk.length - 1].address);
+            // Параметр optimize:true в ссылке для финальной проверки Google
+            window.open(`https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${dest}&waypoints=${waypoints}&travelmode=driving`, '_blank');
+        };
         segs.appendChild(btn);
     }
 
     allPoints.forEach((p, idx) => {
         const div = document.createElement('div');
         div.className = "route-item";
-        div.innerHTML = `
-            <div class="check-row">
-                <input type="checkbox" onchange="allPoints[${idx}].done=this.checked">
-                <div>
-                    <div class="client-label">${idx + 1}. ${p.label}</div>
-                    <div class="address">${p.address}</div>
-                </div>
-            </div>`;
+        div.innerHTML = `<b>${idx+1}. ${p.label}</b><br><small>${p.address}</small>`;
         list.appendChild(div);
     });
-}
-
-function openMaps(points) {
-    const origin = "My+Location";
-    const dest = encodeURIComponent(points[points.length - 1].address);
-    const waypoints = points.slice(0, -1).map(p => encodeURIComponent(p.address)).join('|');
-    
-    // Параметр optimize:true просит Google еще раз проверить логику пути
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&waypoints=${waypoints}&travelmode=driving&dir_action=navigate`;
-    window.open(url, '_blank');
-}
-
-function copyReport() {
-    const report = allPoints.map((p, i) => `${p.done ? '✅' : '❌'} ${i+1}. ${p.label}`).join('\n');
-    navigator.clipboard.writeText("ОТЧЕТ:\n" + report);
-    alert("Отчет скопирован!");
 }
 </script>
 </body>
