@@ -1,145 +1,72 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Route Optimizer 5.0</title>
-    <script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBiqqo0TrHxqpSRrecTKf9ebexIPfKYhcA&libraries=places,geometry"></script>
-    <style>
-        :root { --primary:#007AFF; --success:#34C759; --bg:#F2F2F7; }
-        body { font-family:-apple-system,sans-serif; background:var(--bg); margin:0; padding:15px; }
-        .card { background:#fff; border-radius:15px; padding:15px; margin-bottom:15px; box-shadow:0 2px 8px rgba(0,0,0,.1); }
-        textarea { width:100%; height:120px; border:1px solid #ddd; border-radius:10px; padding:10px; box-sizing:border-box; }
-        .btn { border:none; border-radius:8px; padding:12px; color:#fff; font-weight:bold; cursor:pointer; width:100%; }
-        .btn-blue { background:var(--primary); margin-bottom:10px; }
-        .btn-green { background:var(--success); font-size:16px; height:50px; }
-        #status { font-weight:bold; color:var(--primary); text-align:center; margin-bottom:10px; }
-        .route-item { background:#fafafa; border-left:5px solid #007AFF; padding:10px; margin-bottom:8px; border-radius:6px; font-size:14px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Smart Route Optimizer</title>
+
+<script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=ТВОЙ_API_KEY&libraries=geometry"></script>
+
+<style>
+body { font-family:-apple-system,sans-serif; background:#f2f2f7; margin:0; padding:15px }
+.card { background:#fff; border-radius:14px; padding:15px; margin-bottom:15px }
+textarea { width:100%; height:120px; padding:10px; border-radius:10px; border:1px solid #ccc }
+button { width:100%; padding:14px; border:none; border-radius:10px; font-weight:bold; cursor:pointer }
+.blue { background:#007AFF; color:#fff; margin-bottom:10px }
+.green { background:#34C759; color:#fff }
+#status { text-align:center; font-weight:bold; margin-bottom:10px }
+.route-item { background:#fafafa; border-left:5px solid #007AFF; padding:10px; margin-bottom:8px; border-radius:6px }
+</style>
 </head>
+
 <body>
 
 <div class="card">
-    <div id="status">📍 Ожидание адресов</div>
-    <textarea id="textInput" placeholder="Вставьте список адресов..."></textarea>
-    <div style="margin-top:10px;">
-        <button class="btn btn-blue" onclick="document.getElementById('cameraInput').click()">📷 СДЕЛАТЬ ФОТО</button>
-        <button class="btn btn-green" onclick="startOptimization()">🚀 ПОСТРОИТЬ УМНЫЙ МАРШРУТ</button>
-    </div>
-    <input type="file" id="cameraInput" style="display:none" accept="image/*" capture="environment" onchange="runOCR(this.files)">
+<div id="status">📍 Ожидание данных</div>
+<textarea id="textInput" placeholder="Вставьте адреса или используйте камеру"></textarea>
+<button class="blue" onclick="camera.click()">📷 Фото</button>
+<button class="green" onclick="start()">🚀 Построить маршрут</button>
+<input type="file" id="camera" hidden accept="image/*" capture="environment" onchange="runOCR(this.files)">
 </div>
 
-<div id="segmentsContainer"></div>
-<div class="card"><h3>📋 Очередность доставки:</h3><div id="checklistItems"></div></div>
+<div class="card" id="segments"></div>
+<div class="card"><h3>📋 Очередность:</h3><div id="list"></div></div>
 
 <script>
-let allPoints = [];
-let userPos = null;
+const statusEl = document.getElementById('status');
+let userLocation = null;
+let points = [];
+
+/* ================= OCR ================= */
 
 async function runOCR(files) {
-    const status = document.getElementById('status');
-    const worker = await Tesseract.createWorker();
-    await worker.loadLanguage('deu+rus'); await worker.initialize('deu+rus');
-    status.innerText = "Распознаю текст...";
-    const { data: { text } } = await worker.recognize(files[0]);
+    if (!files.length) return;
+    statusEl.innerText = "🔍 Распознаю текст...";
+    const worker = await Tesseract.createWorker('deu+rus');
+    const { data:{ text } } = await worker.recognize(files[0]);
     document.getElementById('textInput').value += "\n" + text;
     await worker.terminate();
-    status.innerText = "Текст готов!";
+    statusEl.innerText = "✅ Текст добавлен";
 }
 
-function startOptimization() {
-    const status = document.getElementById('status');
-    status.innerText = "🛰️ Определение GPS...";
-    
+/* ================= START ================= */
+
+function start() {
+    statusEl.innerText = "📡 Определение GPS...";
     navigator.geolocation.getCurrentPosition(
-        (pos) => {
-            userPos = new google.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-            processAddresses();
+        pos => {
+            userLocation = new google.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+            process();
         },
-        () => {
-            alert("GPS недоступен. Маршрут будет построен от первой точки списка.");
-            processAddresses();
-        },
-        { enableHighAccuracy: true, timeout: 7000 }
+        () => process(),
+        { timeout: 7000 }
     );
 }
 
-async function processAddresses() {
-    const status = document.getElementById('status');
-    const lines = document.getElementById('textInput').value.split('\n');
-    const geocoder = new google.maps.Geocoder();
-    let unsortedPoints = [];
+/* ================= ADDRESS PROCESSING ================= */
 
-    status.innerText = "🗺️ Геокодирование (поиск на карте)...";
-
-    for (let line of lines) {
-        let addr = line.trim();
-        if (addr.length < 10) continue;
-
-        const result = await new Promise(r => {
-            geocoder.geocode({address: addr}, (res, st) => r(st === 'OK' ? res[0] : null));
-        });
-
-        if (result) {
-            unsortedPoints.push({
-                address: addr,
-                label: addr.split(',')[0],
-                loc: result.geometry.location
-            });
-        }
-    }
-
-    if (unsortedPoints.length === 0) {
-        status.innerText = "❌ Адреса не найдены. Проверьте Billing!";
-        return;
-    }
-
-    // УМНАЯ СОРТИРОВКА (Алгоритм "Ближайший сосед")
-    allPoints = [];
-    let currentPoint = userPos || unsortedPoints[0].loc;
-
-    while (unsortedPoints.length > 0) {
-        unsortedPoints.sort((a, b) => 
-            google.maps.geometry.spherical.computeDistanceBetween(currentPoint, a.loc) - 
-            google.maps.geometry.spherical.computeDistanceBetween(currentPoint, b.loc)
-        );
-        let closest = unsortedPoints.shift();
-        allPoints.push(closest);
-        currentPoint = closest.loc;
-    }
-
-    render();
-    status.innerText = "✅ Маршрут оптимизирован!";
-}
-
-function render() {
-    const segs = document.getElementById('segmentsContainer');
-    const list = document.getElementById('checklistItems');
-    segs.innerHTML = ""; list.innerHTML = "";
-
-    // Нарезка на сегменты по 9 точек
-    for (let i = 0; i < allPoints.length; i += 9) {
-        const chunk = allPoints.slice(i, i + 9);
-        const btn = document.createElement('button');
-        btn.className = "btn btn-green"; btn.style = "margin-bottom:10px;";
-        btn.innerText = `🗺️ СЕГМЕНТ ${Math.floor(i/9)+1} (ЕХАТЬ)`;
-        btn.onclick = () => {
-            const waypoints = chunk.map(p => encodeURIComponent(p.address)).join('|');
-            const dest = encodeURIComponent(chunk[chunk.length - 1].address);
-            // Параметр optimize:true в ссылке для финальной проверки Google
-            window.open(`https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${dest}&waypoints=${waypoints}&travelmode=driving`, '_blank');
-        };
-        segs.appendChild(btn);
-    }
-
-    allPoints.forEach((p, idx) => {
-        const div = document.createElement('div');
-        div.className = "route-item";
-        div.innerHTML = `<b>${idx+1}. ${p.label}</b><br><small>${p.address}</small>`;
-        list.appendChild(div);
-    });
-}
-</script>
-</body>
-</html>
+async function process() {
+    const lines = document.getElementById('textInput').value
+        .split('\n')
+        .map(l => l.trim())
