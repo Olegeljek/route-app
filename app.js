@@ -281,13 +281,6 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     box.className = "card segment-box";
 
     const destinations = points.map(p => `${p.loc.lat},${p.loc.lng}`);
-    const finalDest = destinations[destinations.length - 1];
-    const waypoints = destinations.slice(0, -1);
-    const waypointsParam = waypoints.length > 0 ? `&waypoints=${waypoints.join('%7C')}` : '';
-
-    // URL маршрута для web (с охранением порядка точек сегмента)
-    const navUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${finalDest}${waypointsParam}&travelmode=driving&dir_action=navigate`;
-    const appNavUrl = buildNativeMapsUrl(destinations, navUrl);
 
     const stopsList = points.map((p, idx) => {
         const globalIdx = (segmentNum - 1) * 8 + idx + 1;
@@ -300,44 +293,57 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
             <span class="stops-count">${points.length} ${t('stop')}</span>
         </div>
         <div class="stops-preview">${stopsList}</div>
-        <button class="btn btn-green nav-btn" data-url="${navUrl}" data-app-url="${appNavUrl || ''}">${t('go')}</button>
+        <button class="btn btn-green nav-btn" data-destinations="${destinations.join('|')}" data-step="0">${t('go')}</button>
         <div class="segment-footer">${t('endOfSegment')}: ${points[points.length-1].label}</div>
     `;
 
     container.appendChild(box);
 }
 
-function buildNativeMapsUrl(destinations, webUrl) {
+function buildSingleStopUrls(destination) {
+    const webUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${destination}&travelmode=driving&dir_action=navigate`;
+    const appUrl = buildNativeSingleStopUrl(destination, webUrl);
+    return { appUrl, webUrl };
+}
+
+function buildNativeSingleStopUrl(destination, webUrl) {
     const ua = navigator.userAgent || '';
-    const lastPoint = destinations[destinations.length - 1];
-    const waypointPoints = destinations.slice(0, -1);
 
     if (/iPhone|iPad|iPod/i.test(ua)) {
-        // iOS Google Maps: используем saddr/daddr, чтобы открывался экран маршрута с кнопкой "В путь"
-        const daddr = destinations.join('%2Bto:');
-        return `comgooglemaps://?saddr=Current+Location&daddr=${daddr}&directionsmode=driving`;
+        return `comgooglemaps://?saddr=Current+Location&daddr=${destination}&directionsmode=driving`;
     }
 
     if (/Android/i.test(ua)) {
-        // Android Google Maps Intent: передаём destination + waypoints в порядке сегмента
-        const waypointsParam = waypointPoints.length > 0 ? `&waypoints=${waypointPoints.join('%7C')}` : '';
-        return `intent://maps.google.com/maps/dir/?api=1&origin=My+Location&destination=${lastPoint}${waypointsParam}&travelmode=driving&dir_action=navigate#Intent;scheme=https;package=com.google.android.apps.maps;end`;
+        return `intent://maps.google.com/maps/dir/?api=1&origin=My+Location&destination=${destination}&travelmode=driving&dir_action=navigate#Intent;scheme=https;package=com.google.android.apps.maps;end`;
     }
 
     return webUrl;
 }
 
-// Обработка кликов по кнопкам навигации (прямой запуск нативного маршрута)
+// Обработка кликов по кнопкам навигации: запускаем по одной остановке для стабильного экрана "В путь"
 document.addEventListener('click', (e) => {
     if (!e.target.classList.contains('nav-btn')) return;
 
-    const webUrl = e.target.getAttribute('data-url');
-    const appUrl = e.target.getAttribute('data-app-url');
+    const button = e.target;
+    const destinations = (button.getAttribute('data-destinations') || '').split('|').filter(Boolean);
+    let step = Number(button.getAttribute('data-step') || '0');
 
-    if (!appUrl || appUrl === webUrl) {
-        window.location.assign(webUrl);
+    if (step >= destinations.length) {
         return;
     }
 
-    window.location.assign(appUrl);
+    const destination = destinations[step];
+    const { appUrl, webUrl } = buildSingleStopUrls(destination);
+    window.location.assign(appUrl || webUrl);
+
+    step += 1;
+    button.setAttribute('data-step', String(step));
+
+    if (step < destinations.length) {
+        button.textContent = `➡️ ${t('nextStop')} (${step + 1}/${destinations.length})`;
+    } else {
+        button.textContent = `✅ ${t('segmentDone')}`;
+        button.classList.remove('btn-green');
+        button.classList.add('btn-gray');
+    }
 });
