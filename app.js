@@ -286,7 +286,7 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     const waypointsParam = waypoints.length > 0 ? `&waypoints=${waypoints.join('%7C')}` : '';
 
     // Правильный URL для навигации с "Моё местоположение"
-    const navUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${finalDest}${waypointsParam}&travelmode=driving`;
+    const navUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${finalDest}${waypointsParam}&travelmode=driving&dir_action=navigate`;
 
     const stopsList = points.map((p, idx) => {
         const globalIdx = (segmentNum - 1) * 8 + idx + 1;
@@ -306,10 +306,11 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     container.appendChild(box);
 }
 
-// Обработка кликов по кнопкам навигации (открытие в новой вкладке)
-document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('nav-btn')) {
-        const url = e.target.getAttribute('data-url');
-        window.open(url, '_blank');
-    }
-});
+// Обработка кликов по кнопкам навигации (прямой переход для запуска навигации)
+document.addEventListener('click', (e) => {␊
+    if (e.target.classList.contains('nav-btn')) {␊
+        const url = e.target.getAttribute('data-url');␊
+        window.location.assign(url);
+    }␊
+});␊
+
