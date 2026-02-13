@@ -209,7 +209,11 @@ async function geocode(geocoder, address) {
     return new Promise((resolve) => {
         geocoder.geocode({ address }, (res, status) => {
             if (status === "OK") {
-                resolve(res[0].geometry.location.toJSON());
+                resolve({
+                    loc: res[0].geometry.location.toJSON(),
+                    formattedAddress: res[0].formatted_address || address,
+                    placeId: res[0].place_id || ""
+                });
             } else {
                 console.warn(`Не удалось геокодировать: ${address}`);
                 resolve(null);
@@ -280,7 +284,11 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     const box = document.createElement("div");
     box.className = "card segment-box";
 
-    const destinations = points.map(p => `${p.loc.lat},${p.loc.lng}`);
+    const stopsData = points.map((p) => ({
+        coord: `${p.loc.lat},${p.loc.lng}`,
+        address: p.navAddress || p.raw,
+        placeId: p.placeId || ""
+    }));
 
     const stopsList = points.map((p, idx) => {
         const globalIdx = (segmentNum - 1) * 8 + idx + 1;
@@ -293,28 +301,31 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
             <span class="stops-count">${points.length} ${t('stop')}</span>
         </div>
         <div class="stops-preview">${stopsList}</div>
-        <button class="btn btn-green nav-btn" data-destinations="${destinations.join('|')}" data-step="0">${t('go')}</button>
+        <button class="btn btn-green nav-btn" data-stops="${encodeURIComponent(JSON.stringify(stopsData))}" data-step="0">${t('go')}</button>
         <div class="segment-footer">${t('endOfSegment')}: ${points[points.length-1].label}</div>
     `;
 
     container.appendChild(box);
 }
 
-function buildSingleStopUrls(destination) {
-    const webUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${destination}&travelmode=driving&dir_action=navigate`;
-    const appUrl = buildNativeSingleStopUrl(destination, webUrl);
+function buildSingleStopUrls(stop) {
+    const destinationParam = encodeURIComponent(stop.address || stop.coord);
+    const placeIdParam = stop.placeId ? `&destination_place_id=${encodeURIComponent(stop.placeId)}` : '';
+    const webUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${destinationParam}${placeIdParam}&travelmode=driving&dir_action=navigate`;
+    const appUrl = buildNativeSingleStopUrl(stop, webUrl);
     return { appUrl, webUrl };
 }
 
-function buildNativeSingleStopUrl(destination, webUrl) {
+function buildNativeSingleStopUrl(stop, webUrl) {
     const ua = navigator.userAgent || '';
+    const destinationParam = encodeURIComponent(stop.address || stop.coord);
 
     if (/iPhone|iPad|iPod/i.test(ua)) {
-        return `comgooglemaps://?saddr=Current+Location&daddr=${destination}&directionsmode=driving`;
+        return `comgooglemaps://?saddr=Current+Location&daddr=${destinationParam}&directionsmode=driving`;
     }
 
     if (/Android/i.test(ua)) {
-        return `intent://maps.google.com/maps/dir/?api=1&origin=My+Location&destination=${destination}&travelmode=driving&dir_action=navigate#Intent;scheme=https;package=com.google.android.apps.maps;end`;
+        return `intent://maps.google.com/maps/dir/?api=1&origin=My+Location&destination=${destinationParam}&travelmode=driving&dir_action=navigate#Intent;scheme=https;package=com.google.android.apps.maps;end`;
     }
 
     return webUrl;
@@ -325,26 +336,32 @@ document.addEventListener('click', (e) => {
     if (!e.target.classList.contains('nav-btn')) return;
 
     const button = e.target;
-    const destinations = (button.getAttribute('data-destinations') || '').split('|').filter(Boolean);
+    let stops = [];
+
+    try {
+        stops = JSON.parse(decodeURIComponent(button.getAttribute('data-stops') || '[]'));
+    } catch {
+        stops = [];
+    }
+
     let step = Number(button.getAttribute('data-step') || '0');
 
-    if (step >= destinations.length) {
+    if (step >= stops.length) {
         return;
     }
 
-    const destination = destinations[step];
-    const { appUrl, webUrl } = buildSingleStopUrls(destination);
+    const stop = stops[step];
+    const { appUrl, webUrl } = buildSingleStopUrls(stop);
     window.location.assign(appUrl || webUrl);
 
     step += 1;
     button.setAttribute('data-step', String(step));
 
-    if (step < destinations.length) {
-        button.textContent = `➡️ ${t('nextStop')} (${step + 1}/${destinations.length})`;
+    if (step < stops.length) {
+        button.textContent = `➡️ ${t('nextStop')} (${step + 1}/${stops.length})`;
     } else {
         button.textContent = `✅ ${t('segmentDone')}`;
         button.classList.remove('btn-green');
         button.classList.add('btn-gray');
     }
 });
-
