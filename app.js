@@ -19,6 +19,9 @@ const translations = {
         buildRoute: "🚀 ПОСТРОИТЬ МАРШРУТ",
         segment: "СЕГМЕНТ",
         go: "🚀 В ПУТЬ",
+        nextStop: "Следующая остановка",
+        segmentDone: "Сегмент завершён",
+        gpsStart: "GPS-старт",
         endOfSegment: "🏁 Конец сегмента",
         stop: "остановка",
         reset: "Сбросить настройки и ключ",
@@ -47,6 +50,9 @@ const translations = {
         buildRoute: "🚀 ROUTE ERSTELLEN",
         segment: "SEGMENT",
         go: "🚀 LOS",
+        nextStop: "Nächster Stopp",
+        segmentDone: "Segment abgeschlossen",
+        gpsStart: "GPS-Start",
         endOfSegment: "🏁 Ende des Segments",
         stop: "Halt",
         reset: "Einstellungen und Schlüssel zurücksetzen",
@@ -141,6 +147,21 @@ function initApp(key) {
     document.head.appendChild(script);
 }
 
+function getCurrentPosition() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve(null);
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
+        );
+    });
+}
+
 function startLogic() {
     const statusEl = document.getElementById("status");
     statusEl.textContent = t('statusReady');
@@ -166,16 +187,24 @@ function startLogic() {
         const baseAddr = bases[baseKey];
 
         try {
-            const baseLoc = await geocode(geocoder, baseAddr);
+            const baseGeo = await geocode(geocoder, baseAddr);
+            if (!baseGeo) {
+                throw new Error("Не удалось определить стартовую базу");
+            }
+
+            const gpsLoc = await getCurrentPosition();
+            const baseLoc = gpsLoc || baseGeo.loc;
             const points = [];
 
             for (let line of [...new Set(lines)]) {
-                const loc = await geocode(geocoder, line);
-                if (loc) {
+                const geo = await geocode(geocoder, line);
+                if (geo) {
                     points.push({
                         raw: line,
-                        loc,
-                        label: line.split(',')[0].substring(0, 30)
+                        loc: geo.loc,
+                        label: line.split(',')[0].substring(0, 30),
+                        navAddress: geo.formattedAddress || line,
+                        placeId: geo.placeId || ""
                     });
                 }
             }
