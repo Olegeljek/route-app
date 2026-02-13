@@ -2,50 +2,52 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Командный Логист (Circuit Style)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes" />
+  <title>🚚 Логистический маршрутизатор</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
 </head>
 <body>
   <div class="container">
+    <!-- Кнопка переключения языка будет добавлена скриптом -->
+    
     <div id="setup-section" class="card" style="display:none; border: 2px solid #007AFF;">
-        <div class="title">🔑 Активация доступа</div>
-        <p style="font-size: 13px; margin: 10px 0;">Для начала работы вставьте API ключ Google Maps. Он сохранится локально на вашем устройстве.</p>
-        <input type="password" id="apiKeyInput" class="input" placeholder="Введите ключ AIzaSy...">
-        <button class="btn btn-blue" id="btnSaveKey" style="margin-top:10px; width:100%;">Активировать</button>
+      <div class="title" data-i18n="activate">🔑 Активация доступа</div>
+      <p style="font-size: 13px; margin: 10px 0;" data-i18n="keyDesc">Для начала работы вставьте API ключ Google Maps. Он сохранится локально.</p>
+      <input type="password" id="apiKeyInput" class="input" data-i18n-placeholder="keyPlaceholder" placeholder="Введите ключ AIzaSy...">
+      <button class="btn btn-blue" id="btnSaveKey" style="margin-top:10px; width:100%;" data-i18n="activateBtn">Активировать</button>
     </div>
 
     <div id="main-app" style="display:none;">
-        <div class="card">
-          <div class="header">
-            <div class="title">🏁 База / Старт</div>
-            <div id="status" class="status">Загрузка...</div>
-          </div>
-          <select id="baseSelect" class="input">
-            <option value="Platz des Friedens 1 a, 06792 Sandersdorf-Brehna">Sandersdorf</option>
-            <option value="Dessauer Allee 50, 06766 Bitterfeld-Wolfen">Wolfen</option>
-            <option value="Bahnhofstraße 27, 06749 Bitterfeld-Wolfen">Bitterfeld</option>
-          </select>
+      <div class="card">
+        <div class="header">
+          <div class="title" data-i18n="base">🏁 База / Старт</div>
+          <div id="status" class="status" data-i18n="statusReady">Загрузка...</div>
         </div>
+        <select id="baseSelect" class="input">
+          <option value="sandersdorf" data-i18n="sandersdorf">Зандерсдорф</option>
+          <option value="zoerbig" data-i18n="zorbig">Цёрбиг</option>
+          <option value="wolfen" data-i18n="wolfen">Вольфен</option>
+          <option value="bitterfeld" data-i18n="bitterfeld">Биттерфельд</option>
+        </select>
+      </div>
 
-        <div class="card">
-          <div class="title">📥 Адреса для сегментации</div>
-          <textarea id="textInput" placeholder="Вставьте адреса (каждый с новой строки)"></textarea>
-          <div class="row">
-            <button class="btn btn-blue" id="btnOCR">🖼️ Фото</button>
-            <button class="btn btn-gray" id="btnClear">🗑 Сброс</button>
-          </div>
-          <button class="btn btn-green" id="btnBuild" style="width:100%; margin-top:10px; font-weight: bold;">🚀 ПОСТРОИТЬ МАРШРУТ</button>
-          <input id="fileInput" type="file" accept="image/*" multiple class="hidden" />
+      <div class="card">
+        <div class="title" data-i18n="addresses">📥 Адреса для доставки</div>
+        <textarea id="textInput" data-i18n-placeholder="textPlaceholder" placeholder="Вставьте адреса (каждый с новой строки)"></textarea>
+        <div class="row">
+          <button class="btn btn-blue" id="btnOCR" data-i18n="photo">🖼️ Фото</button>
+          <button class="btn btn-gray" id="btnClear" data-i18n="clear">🗑 Сброс</button>
         </div>
+        <button class="btn btn-green" id="btnBuild" style="width:100%; margin-top:10px; font-weight: bold;" data-i18n="buildRoute">🚀 ПОСТРОИТЬ МАРШРУТ</button>
+        <input id="fileInput" type="file" accept="image/*" multiple class="hidden" />
+      </div>
 
-        <div id="segmentsContainer"></div>
-        <div id="checklistItems" class="list"></div>
-        
-        <div style="text-align: center;">
-            <button id="btnResetKey" style="background: none; border: none; color: #999; font-size: 10px; text-decoration: underline; cursor: pointer; margin-top: 30px;">Сбросить настройки и ключ</button>
-        </div>
+      <div id="segmentsContainer"></div>
+      
+      <div style="text-align: center;">
+        <button id="btnResetKey" style="background: none; border: none; color: #999; font-size: 10px; text-decoration: underline; cursor: pointer; margin-top: 30px;" data-i18n="reset">Сбросить настройки и ключ</button>
+      </div>
     </div>
   </div>
   <script src="app.js"></script>
