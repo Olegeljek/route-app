@@ -285,8 +285,9 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     const waypoints = destinations.slice(0, -1);
     const waypointsParam = waypoints.length > 0 ? `&waypoints=${waypoints.join('%7C')}` : '';
 
-    // Правильный URL для навигации с "Моё местоположение"
+    // URL маршрута для web (с сохранением порядка точек сегмента)
     const navUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${finalDest}${waypointsParam}&travelmode=driving&dir_action=navigate`;
+    const appNavUrl = buildNativeMapsUrl(navUrl);
 
     const stopsList = points.map((p, idx) => {
         const globalIdx = (segmentNum - 1) * 8 + idx + 1;
@@ -299,18 +300,53 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
             <span class="stops-count">${points.length} ${t('stop')}</span>
         </div>
         <div class="stops-preview">${stopsList}</div>
-        <button class="btn btn-green nav-btn" data-url="${navUrl}">${t('go')}</button>
+        <button class="btn btn-green nav-btn" data-url="${navUrl}" data-app-url="${appNavUrl || ''}">${t('go')}</button>
         <div class="segment-footer">${t('endOfSegment')}: ${points[points.length-1].label}</div>
     `;
 
     container.appendChild(box);
 }
 
-// Обработка кликов по кнопкам навигации (прямой переход для запуска навигации)
-document.addEventListener('click', (e) => {␊
-    if (e.target.classList.contains('nav-btn')) {␊
-        const url = e.target.getAttribute('data-url');␊
-        window.location.assign(url);
-    }␊
-});␊
+function buildNativeMapsUrl(webUrl) {
+    const ua = navigator.userAgent || '';
+
+    if (/iPhone|iPad|iPod/i.test(ua)) {
+        return `comgooglemapsurl://${webUrl.replace(/^https?:\/\//, '')}`;
+    }
+
+    if (/Android/i.test(ua)) {
+        return `intent://${webUrl.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.google.android.apps.maps;end`;
+    }
+
+    return null;
+}
+
+// Обработка кликов по кнопкам навигации (с попыткой открыть нативный Google Maps)
+document.addEventListener('click', (e) => {
+    if (!e.target.classList.contains('nav-btn')) return;
+
+    const webUrl = e.target.getAttribute('data-url');
+    const appUrl = e.target.getAttribute('data-app-url');
+
+    if (!appUrl) {
+        window.location.assign(webUrl);
+        return;
+    }
+
+    const fallbackTimer = setTimeout(() => {
+        window.location.assign(webUrl);
+    }, 900);
+
+    const cancelFallback = () => {
+        clearTimeout(fallbackTimer);
+        window.removeEventListener('blur', cancelFallback);
+        window.removeEventListener('pagehide', cancelFallback);
+    };
+
+    window.addEventListener('blur', cancelFallback, { once: true });
+    window.addEventListener('pagehide', cancelFallback, { once: true });
+
+    window.location.assign(appUrl);
+});
+
 
