@@ -1,7 +1,7 @@
 const API_STORAGE_KEY = "user_google_maps_key_v1";
 const savedKey = localStorage.getItem(API_STORAGE_KEY);
 
-// Проверка доступа при старте
+// 1. Проверка доступа при старте
 if (!savedKey) {
     document.getElementById("setup-section").style.display = "block";
 } else {
@@ -42,7 +42,8 @@ function startLogic() {
     statusEl.textContent = "Система готова";
     
     document.getElementById("btnBuild").addEventListener("click", async () => {
-        const lines = document.getElementById("textInput").value.split("\n").map(l => l.trim()).filter(l => l.length > 5);
+        const text = document.getElementById("textInput").value;
+        const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 5);
         if (lines.length === 0) return;
 
         statusEl.textContent = "Обработка...";
@@ -61,6 +62,13 @@ function startLogic() {
             render(optimized);
             statusEl.textContent = "Маршрут готов";
         } catch (e) { alert("Ошибка: " + e.message); }
+    });
+
+    // Очистка поля ввода
+    document.getElementById("btnClear").addEventListener("click", () => {
+        document.getElementById("textInput").value = "";
+        document.getElementById("segmentsContainer").innerHTML = "";
+        statusEl.textContent = "Очищено";
     });
 }
 
@@ -89,24 +97,30 @@ function optimize(pts, start) {
     return result;
 }
 
+// ОБНОВЛЕННАЯ ФУНКЦИЯ РЕНДЕРА ДЛЯ ПРИНУДИТЕЛЬНОЙ НАВИГАЦИИ
 function render(points) {
     const container = document.getElementById("segmentsContainer");
     container.innerHTML = "";
-    const size = 7; // Оптимально для мобильной навигации
+    const size = 7; 
 
     for (let i = 0; i < points.length; i += size) {
         const chunk = points.slice(i, i + size);
-        const dest = `${chunk[chunk.length-1].loc.lat},${chunk[chunk.length-1].loc.lng}`;
-        const wps = chunk.slice(0, -1).map(p => `${p.loc.lat},${p.loc.lng}`).join('%7C');
-        const wpsParam = wps ? `&waypoints=${wps}` : "";
-
-        const drvUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${dest}${wpsParam}&travelmode=driving&dir_action=navigate`;
+        
+        // Финальная точка сегмента
+        const destCoord = `${chunk[chunk.length-1].loc.lat},${chunk[chunk.length-1].loc.lng}`;
+        
+        // Промежуточные точки (вейпоинты)
+        const waypoints = chunk.slice(0, -1).map(p => `${p.loc.lat},${p.loc.lng}`).join('|');
+        
+        // Универсальная ссылка: без origin (чтобы взять My Location) + режим navigate
+        const drvUrl = `https://www.google.com/maps/dir/?api=1&destination=${destCoord}&waypoints=${encodeURIComponent(waypoints)}&travelmode=driving&dir_action=navigate`;
 
         const box = document.createElement("div");
         box.className = "card segment-box";
         box.innerHTML = `
             <div class="header"><b>СЕГМЕНТ ${(i/size)+1}</b></div>
-            <button class="btn btn-green" style="width:100%; font-size: 16px;" onclick="window.open('${drvUrl}', '_blank')">В ПУТЬ 🚀</button>
+            <button class="btn btn-green" style="width:100%; font-size: 16px; font-weight: bold;" 
+                    onclick="window.location.href='${drvUrl}'">В ПУТЬ 🚀</button>
             <div style="font-size:11px; margin-top:8px; color:#666;">🏁 Конец сегмента: ${chunk[chunk.length-1].label}</div>
         `;
         container.appendChild(box);
