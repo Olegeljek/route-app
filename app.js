@@ -347,3 +347,4 @@ document.addEventListener('click', (e) => {
         button.classList.add('btn-gray');
     }
 });
+
