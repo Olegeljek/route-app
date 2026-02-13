@@ -285,9 +285,9 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     const waypoints = destinations.slice(0, -1);
     const waypointsParam = waypoints.length > 0 ? `&waypoints=${waypoints.join('%7C')}` : '';
 
-    // URL маршрута для web (с сохранением порядка точек сегмента)
+    // URL маршрута для web (с охранением порядка точек сегмента)
     const navUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${finalDest}${waypointsParam}&travelmode=driving&dir_action=navigate`;
-    const appNavUrl = buildNativeMapsUrl(navUrl);
+    const appNavUrl = buildNativeMapsUrl(destinations, navUrl);
 
     const stopsList = points.map((p, idx) => {
         const globalIdx = (segmentNum - 1) * 8 + idx + 1;
@@ -307,46 +307,37 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     container.appendChild(box);
 }
 
-function buildNativeMapsUrl(webUrl) {
+function buildNativeMapsUrl(destinations, webUrl) {
     const ua = navigator.userAgent || '';
+    const lastPoint = destinations[destinations.length - 1];
+    const waypointPoints = destinations.slice(0, -1);
 
     if (/iPhone|iPad|iPod/i.test(ua)) {
-        return `comgooglemapsurl://${webUrl.replace(/^https?:\/\//, '')}`;
+        // iOS Google Maps: используем saddr/daddr, чтобы открывался экран маршрута с кнопкой "В путь"
+        const daddr = destinations.join('%2Bto:');
+        return `comgooglemaps://?saddr=Current+Location&daddr=${daddr}&directionsmode=driving`;
     }
 
     if (/Android/i.test(ua)) {
-        return `intent://${webUrl.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.google.android.apps.maps;end`;
+        // Android Google Maps Intent: передаём destination + waypoints в порядке сегмента
+        const waypointsParam = waypointPoints.length > 0 ? `&waypoints=${waypointPoints.join('%7C')}` : '';
+        return `intent://maps.google.com/maps/dir/?api=1&origin=My+Location&destination=${lastPoint}${waypointsParam}&travelmode=driving&dir_action=navigate#Intent;scheme=https;package=com.google.android.apps.maps;end`;
     }
 
-    return null;
+    return webUrl;
 }
 
-// Обработка кликов по кнопкам навигации (с попыткой открыть нативный Google Maps)
+// Обработка кликов по кнопкам навигации (прямой запуск нативного маршрута)
 document.addEventListener('click', (e) => {
     if (!e.target.classList.contains('nav-btn')) return;
 
     const webUrl = e.target.getAttribute('data-url');
     const appUrl = e.target.getAttribute('data-app-url');
 
-    if (!appUrl) {
+    if (!appUrl || appUrl === webUrl) {
         window.location.assign(webUrl);
         return;
     }
 
-    const fallbackTimer = setTimeout(() => {
-        window.location.assign(webUrl);
-    }, 900);
-
-    const cancelFallback = () => {
-        clearTimeout(fallbackTimer);
-        window.removeEventListener('blur', cancelFallback);
-        window.removeEventListener('pagehide', cancelFallback);
-    };
-
-    window.addEventListener('blur', cancelFallback, { once: true });
-    window.addEventListener('pagehide', cancelFallback, { once: true });
-
     window.location.assign(appUrl);
 });
-
-
