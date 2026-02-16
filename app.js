@@ -14,7 +14,7 @@ const translations = {
     statusRouteReady: "Маршрут готов",
     addresses: "📥 Адреса для доставки",
     textPlaceholder: "Вставьте адреса (каждый с новой строки)",
-    clear: "🗑 Срос",
+    clear: "🗑 Сброс",
     buildRoute: "🚀 ПОСТРОИТЬ МАРШРУТ",
     segment: "СЕГМЕНТ",
     go: "🚀 В ПУТЬ",
@@ -157,7 +157,24 @@ function startLogic() {
     statusEl.textContent = t("statusProcessing");
     const geocoder = new google.maps.Geocoder();
 
+    const bases = {
+      sandersdorf: "Platz des Friedens 1 a, 06792 Sandersdorf-Brehna",
+      zoerbig: "Lange Str. 22, 06780 Zörbig",
+      wolfen: "Dessauer Allee 50, 06766 Bitterfeld-Wolfen",
+      bitterfeld: "Bahnhofstraße 27, 06749 Bitterfeld-Wolfen"
+    };
+
+    const baseKey = document.getElementById("baseSelect").value;
+    const baseAddr = bases[baseKey];
+
     try {
+      const baseData = await geocode(geocoder, baseAddr);
+      const baseLoc = baseData?.loc;
+
+      if (!baseLoc) {
+        throw new Error("Не удалось геокодировать базу");
+      }
+
       const points = [];
       const uniquePlaces = new Set();
 
@@ -186,7 +203,7 @@ function startLogic() {
         throw new Error("Не удалось найти ни одного адреса");
       }
 
-      const optimized = optimizeRoute(points);
+      const optimized = optimizeRoute(points, baseLoc);
       renderOptimizedRoute(optimized);
       statusEl.textContent = t("statusRouteReady");
     } catch (error) {
@@ -219,12 +236,12 @@ async function geocode(geocoder, address) {
   });
 }
 
-function optimizeRoute(points) {
+function optimizeRoute(points, start) {
   if (points.length === 0) return [];
 
+  const result = [];
   const unvisited = [...points];
-  const result = [unvisited.shift()];
-  let current = result[0].loc;
+  let current = start;
 
   while (unvisited.length > 0) {
     let nearestIndex = 0;
@@ -274,29 +291,32 @@ function renderOptimizedRoute(points) {
   for (let i = 0; i < points.length; i += SEGMENT_SIZE) {
     const chunk = points.slice(i, i + SEGMENT_SIZE);
     const segmentNum = Math.floor(i / SEGMENT_SIZE) + 1;
-    createSegmentCard(container, chunk, segmentNum);
+    const segmentEntryPoint = i > 0 ? points[i - 1] : null;
+    createSegmentCard(container, chunk, segmentNum, segmentEntryPoint);
   }
 }
 
-function buildSegmentGoogleMapsUrl(segmentPoints) {
+function buildSegmentGoogleMapsUrl(segmentPoints, entryPoint = null) {
   if (segmentPoints.length === 0) return "";
 
-  if (segmentPoints.length === 1) {
-    const singlePoint = encodeURIComponent(segmentPoints[0].formatted || segmentPoints[0].raw);
+  const routePoints = entryPoint ? [entryPoint, ...segmentPoints] : [...segmentPoints];
+
+  if (routePoints.length === 1) {
+    const singlePoint = encodeURIComponent(routePoints[0].formatted || routePoints[0].raw);
     return `https://www.google.com/maps/search/${singlePoint}`;
   }
 
-  const encodedStops = segmentPoints.map((point) => encodeURIComponent(point.formatted || point.raw));
+  const encodedStops = routePoints.map((point) => encodeURIComponent(point.formatted || point.raw));
   return `https://www.google.com/maps/dir/${encodedStops.join("/")}`;
 }
 
-function createSegmentCard(container, points, segmentNum) {
+function createSegmentCard(container, points, segmentNum, entryPoint = null) {
   if (points.length === 0) return;
 
   const box = document.createElement("div");
   box.className = "card segment-box";
 
-  const navUrl = buildSegmentGoogleMapsUrl(points);
+  const navUrl = buildSegmentGoogleMapsUrl(points, entryPoint);
   const stopsList = points
     .map((point, idx) => {
       const globalIdx = (segmentNum - 1) * SEGMENT_SIZE + idx + 1;
