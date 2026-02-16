@@ -291,32 +291,29 @@ function renderOptimizedRoute(points) {
   for (let i = 0; i < points.length; i += SEGMENT_SIZE) {
     const chunk = points.slice(i, i + SEGMENT_SIZE);
     const segmentNum = Math.floor(i / SEGMENT_SIZE) + 1;
-    const segmentEntryPoint = i > 0 ? points[i - 1] : null;
-    createSegmentCard(container, chunk, segmentNum, segmentEntryPoint);
+    createSegmentCard(container, chunk, segmentNum);
   }
 }
 
-function buildSegmentGoogleMapsUrl(segmentPoints, entryPoint = null) {
+function buildSegmentGoogleMapsUrl(segmentPoints) {
   if (segmentPoints.length === 0) return "";
 
-  const routePoints = entryPoint ? [entryPoint, ...segmentPoints] : [...segmentPoints];
-
-  if (routePoints.length === 1) {
-    const singlePoint = encodeURIComponent(routePoints[0].formatted || routePoints[0].raw);
+  if (segmentPoints.length === 1) {
+    const singlePoint = encodeURIComponent(segmentPoints[0].formatted || segmentPoints[0].raw);
     return `https://www.google.com/maps/search/${singlePoint}`;
   }
 
-  const encodedStops = routePoints.map((point) => encodeURIComponent(point.formatted || point.raw));
+  const encodedStops = segmentPoints.map((point) => encodeURIComponent(point.formatted || point.raw));
   return `https://www.google.com/maps/dir/${encodedStops.join("/")}`;
 }
 
-function createSegmentCard(container, points, segmentNum, entryPoint = null) {
+function createSegmentCard(container, points, segmentNum) {
   if (points.length === 0) return;
 
   const box = document.createElement("div");
   box.className = "card segment-box";
 
-  const navUrl = buildSegmentGoogleMapsUrl(points, entryPoint);
+  const navUrl = buildSegmentGoogleMapsUrl(points);
   const stopsList = points
     .map((point, idx) => {
       const globalIdx = (segmentNum - 1) * SEGMENT_SIZE + idx + 1;
