@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes" />
   <title>🚚 Логистический маршрутизатор</title>
   <link rel="stylesheet" href="style.css" />
-  <script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -36,11 +35,9 @@
         <div class="title" data-i18n="addresses">📥 Адреса для доставки</div>
         <textarea id="textInput" data-i18n-placeholder="textPlaceholder" placeholder="Вставьте адреса (каждый с новой строки)"></textarea>
         <div class="row">
-          <button class="btn btn-blue" id="btnOCR" data-i18n="photo">🖼️ Фото</button>
           <button class="btn btn-gray" id="btnClear" data-i18n="clear">🗑 Сброс</button>
         </div>
         <button class="btn btn-green" id="btnBuild" style="width:100%; margin-top:10px; font-weight: bold;" data-i18n="buildRoute">🚀 ПОСТРОИТЬ МАРШРУТ</button>
-        <input id="fileInput" type="file" accept="image/*" multiple class="hidden" />
       </div>
 
       <div id="segmentsContainer"></div>
