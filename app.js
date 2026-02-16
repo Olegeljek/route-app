@@ -14,14 +14,10 @@ const translations = {
         statusRouteReady: "Маршрут готов",
         addresses: "📥 Адреса для доставки",
         textPlaceholder: "Вставьте адреса (каждый с новой строки)",
-        photo: "🖼️ Фото",
         clear: "🗑 Сброс",
         buildRoute: "🚀 ПОСТРОИТЬ МАРШРУТ",
         segment: "СЕГМЕНТ",
         go: "🚀 В ПУТЬ",
-        nextStop: "Следующая остановка",
-        segmentDone: "Сегмент завершён",
-        gpsStart: "GPS-старт",
         endOfSegment: "🏁 Конец сегмента",
         stop: "остановка",
         reset: "Сбросить настройки и ключ",
@@ -45,14 +41,10 @@ const translations = {
         statusRouteReady: "Route fertig",
         addresses: "📥 Lieferadressen",
         textPlaceholder: "Adressen einfügen (eine pro Zeile)",
-        photo: "🖼️ Foto",
         clear: "🗑 Zurücksetzen",
         buildRoute: "🚀 ROUTE ERSTELLEN",
         segment: "SEGMENT",
         go: "🚀 LOS",
-        nextStop: "Nächster Stopp",
-        segmentDone: "Segment abgeschlossen",
-        gpsStart: "GPS-Start",
         endOfSegment: "🏁 Ende des Segments",
         stop: "Halt",
         reset: "Einstellungen und Schlüssel zurücksetzen",
@@ -147,21 +139,6 @@ function initApp(key) {
     document.head.appendChild(script);
 }
 
-function getCurrentPosition() {
-    return new Promise((resolve) => {
-        if (!navigator.geolocation) {
-            resolve(null);
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-            () => resolve(null),
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
-        );
-    });
-}
-
 function startLogic() {
     const statusEl = document.getElementById("status");
     statusEl.textContent = t('statusReady');
@@ -187,24 +164,16 @@ function startLogic() {
         const baseAddr = bases[baseKey];
 
         try {
-            const baseGeo = await geocode(geocoder, baseAddr);
-            if (!baseGeo) {
-                throw new Error("Не удалось определить стартовую базу");
-            }
-
-            const gpsLoc = await getCurrentPosition();
-            const baseLoc = gpsLoc || baseGeo.loc;
+            const baseLoc = await geocode(geocoder, baseAddr);
             const points = [];
 
             for (let line of [...new Set(lines)]) {
-                const geo = await geocode(geocoder, line);
-                if (geo) {
+                const loc = await geocode(geocoder, line);
+                if (loc) {
                     points.push({
                         raw: line,
-                        loc: geo.loc,
-                        label: line.split(',')[0].substring(0, 30),
-                        navAddress: geo.formattedAddress || line,
-                        placeId: geo.placeId || ""
+                        loc,
+                        label: line.split(',')[0].substring(0, 30)
                     });
                 }
             }
@@ -227,22 +196,13 @@ function startLogic() {
         document.getElementById("textInput").value = "";
         document.getElementById("segmentsContainer").innerHTML = "";
     });
-
-    // OCR (можно доработать позже)
-    document.getElementById("btnOCR").addEventListener("click", () => {
-        document.getElementById("fileInput").click();
-    });
 }
 
 async function geocode(geocoder, address) {
     return new Promise((resolve) => {
         geocoder.geocode({ address }, (res, status) => {
             if (status === "OK") {
-                resolve({
-                    loc: res[0].geometry.location.toJSON(),
-                    formattedAddress: res[0].formatted_address || address,
-                    placeId: res[0].place_id || ""
-                });
+                resolve(res[0].geometry.location.toJSON());
             } else {
                 console.warn(`Не удалось геокодировать: ${address}`);
                 resolve(null);
@@ -282,7 +242,7 @@ function renderOptimizedRoute(points, baseLoc) {
     const container = document.getElementById("segmentsContainer");
     container.innerHTML = "";
 
-    const SEGMENT_SIZE = 8;
+    const SEGMENT_SIZE = 9; // Изменено с 8 на 9
 
     // Полный список для оператора
     const fullListDiv = document.createElement("div");
@@ -313,14 +273,16 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
     const box = document.createElement("div");
     box.className = "card segment-box";
 
-    const stopsData = points.map((p) => ({
-        coord: `${p.loc.lat},${p.loc.lng}`,
-        address: p.navAddress || p.raw,
-        placeId: p.placeId || ""
-    }));
+    const destinations = points.map(p => `${p.loc.lat},${p.loc.lng}`);
+    const finalDest = destinations[destinations.length - 1];
+    const waypoints = destinations.slice(0, -1);
+    const waypointsParam = waypoints.length > 0 ? `&waypoints=${waypoints.join('%7C')}` : '';
+
+    // Правильный URL для навигации с "Моё местоположение"
+    const navUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${finalDest}${waypointsParam}&travelmode=driving`;
 
     const stopsList = points.map((p, idx) => {
-        const globalIdx = (segmentNum - 1) * 8 + idx + 1;
+        const globalIdx = (segmentNum - 1) * 9 + idx + 1;
         return `<div class="stop-item">${globalIdx}. ${p.label}</div>`;
     }).join('');
 
@@ -330,67 +292,17 @@ function createSegmentCard(container, points, startLoc, segmentNum, isFirst) {
             <span class="stops-count">${points.length} ${t('stop')}</span>
         </div>
         <div class="stops-preview">${stopsList}</div>
-        <button class="btn btn-green nav-btn" data-stops="${encodeURIComponent(JSON.stringify(stopsData))}" data-step="0">${t('go')}</button>
+        <button class="btn btn-green nav-btn" data-url="${navUrl}">${t('go')}</button>
         <div class="segment-footer">${t('endOfSegment')}: ${points[points.length-1].label}</div>
     `;
 
     container.appendChild(box);
 }
 
-function buildSingleStopUrls(stop) {
-    const destinationParam = encodeURIComponent(stop.address || stop.coord);
-    const placeIdParam = stop.placeId ? `&destination_place_id=${encodeURIComponent(stop.placeId)}` : '';
-    const webUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${destinationParam}${placeIdParam}&travelmode=driving&dir_action=navigate`;
-    const appUrl = buildNativeSingleStopUrl(stop, webUrl);
-    return { appUrl, webUrl };
-}
-
-function buildNativeSingleStopUrl(stop, webUrl) {
-    const ua = navigator.userAgent || '';
-    const destinationParam = encodeURIComponent(stop.address || stop.coord);
-
-    if (/iPhone|iPad|iPod/i.test(ua)) {
-        return `comgooglemaps://?saddr=Current+Location&daddr=${destinationParam}&directionsmode=driving`;
-    }
-
-    if (/Android/i.test(ua)) {
-        return `intent://maps.google.com/maps/dir/?api=1&origin=My+Location&destination=${destinationParam}&travelmode=driving&dir_action=navigate#Intent;scheme=https;package=com.google.android.apps.maps;end`;
-    }
-
-    return webUrl;
-}
-
-// Обработка кликов по кнопкам навигации: запускаем по одной остановке для стабильного экрана "В путь"
+// Обработка кликов по кнопкам навигации (открытие в новой вкладке)
 document.addEventListener('click', (e) => {
-    if (!e.target.classList.contains('nav-btn')) return;
-
-    const button = e.target;
-    let stops = [];
-
-    try {
-        stops = JSON.parse(decodeURIComponent(button.getAttribute('data-stops') || '[]'));
-    } catch {
-        stops = [];
-    }
-
-    let step = Number(button.getAttribute('data-step') || '0');
-
-    if (step >= stops.length) {
-        return;
-    }
-
-    const stop = stops[step];
-    const { appUrl, webUrl } = buildSingleStopUrls(stop);
-    window.location.assign(appUrl || webUrl);
-
-    step += 1;
-    button.setAttribute('data-step', String(step));
-
-    if (step < stops.length) {
-        button.textContent = `➡️ ${t('nextStop')} (${step + 1}/${stops.length})`;
-    } else {
-        button.textContent = `✅ ${t('segmentDone')}`;
-        button.classList.remove('btn-green');
-        button.classList.add('btn-gray');
+    if (e.target.classList.contains('nav-btn')) {
+        const url = e.target.getAttribute('data-url');
+        window.open(url, '_blank');
     }
 });
