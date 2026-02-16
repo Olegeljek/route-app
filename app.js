@@ -14,7 +14,7 @@ const translations = {
     statusRouteReady: "Маршрут готов",
     addresses: "📥 Адреса для доставки",
     textPlaceholder: "Вставьте адреса (каждый с новой строки)",
-    clear: "🗑 Сброс",
+    clear: "🗑 Срос",
     buildRoute: "🚀 ПОСТРОИТЬ МАРШРУТ",
     segment: "СЕГМЕНТ",
     go: "🚀 В ПУТЬ",
@@ -157,24 +157,7 @@ function startLogic() {
     statusEl.textContent = t("statusProcessing");
     const geocoder = new google.maps.Geocoder();
 
-    const bases = {
-      sandersdorf: "Platz des Friedens 1 a, 06792 Sandersdorf-Brehna",
-      zoerbig: "Lange Str. 22, 06780 Zörbig",
-      wolfen: "Dessauer Allee 50, 06766 Bitterfeld-Wolfen",
-      bitterfeld: "Bahnhofstraße 27, 06749 Bitterfeld-Wolfen"
-    };
-
-    const baseKey = document.getElementById("baseSelect").value;
-    const baseAddr = bases[baseKey];
-
     try {
-      const baseData = await geocode(geocoder, baseAddr);
-      const baseLoc = baseData?.loc;
-
-      if (!baseLoc) {
-        throw new Error("Не удалось геокодировать базу");
-      }
-
       const points = [];
       const uniquePlaces = new Set();
 
@@ -203,7 +186,7 @@ function startLogic() {
         throw new Error("Не удалось найти ни одного адреса");
       }
 
-      const optimized = optimizeRoute(points, baseLoc);
+      const optimized = optimizeRoute(points);
       renderOptimizedRoute(optimized);
       statusEl.textContent = t("statusRouteReady");
     } catch (error) {
@@ -236,12 +219,12 @@ async function geocode(geocoder, address) {
   });
 }
 
-function optimizeRoute(points, start) {
+function optimizeRoute(points) {
   if (points.length === 0) return [];
 
-  const result = [];
   const unvisited = [...points];
-  let current = start;
+  const result = [unvisited.shift()];
+  let current = result[0].loc;
 
   while (unvisited.length > 0) {
     let nearestIndex = 0;
