@@ -180,29 +180,34 @@ function startLogic() {
       const pointsByKey = new Map();
 
       for (const line of lines) {
-        const geo = await geocode(geocoder, line);
-        if (geo?.loc) {
-          const fallbackGeoKey = `${geo.loc.lat.toFixed(6)},${geo.loc.lng.toFixed(6)}`;
-          const stopKey = geo.placeId || fallbackGeoKey;
-          const existing = pointsByKey.get(stopKey);
+        const normalizedInput = normalizeInputAddress(line);
+        const geo = await geocode(geocoder, normalizedInput);
 
-          if (existing) {
-            existing.deliveryCount += 1;
-            existing.deliveryNames.push(line);
-            continue;
-          }
-
-          pointsByKey.set(stopKey, {
-            raw: line,
-            loc: geo.loc,
-            placeId: geo.placeId,
-            formatted: geo.formatted,
-            navAddress: geo.navAddress,
-            label: line.substring(0, 30),
-            deliveryCount: 1,
-            deliveryNames: [line]
-          });
+        if (!geo?.loc) {
+          continue;
         }
+
+        const fallbackGeoKey = `${geo.loc.lat.toFixed(6)},${geo.loc.lng.toFixed(6)}`;
+        const normalizedNavKey = normalizeForGrouping(geo.navAddress || geo.formatted || normalizedInput);
+        const stopKey = geo.placeId || normalizedNavKey || fallbackGeoKey;
+        const existing = pointsByKey.get(stopKey);
+
+        if (existing) {
+          existing.deliveryCount += 1;
+          existing.deliveryNames.push(line);
+          continue;
+        }
+
+        pointsByKey.set(stopKey, {
+          raw: line,
+          loc: geo.loc,
+          placeId: geo.placeId,
+          formatted: geo.formatted,
+          navAddress: geo.navAddress,
+          label: line.substring(0, 60),
+          deliveryCount: 1,
+          deliveryNames: [line]
+        });
       }
 
       const points = Array.from(pointsByKey.values());
@@ -224,6 +229,18 @@ function startLogic() {
     document.getElementById("textInput").value = "";
     document.getElementById("segmentsContainer").innerHTML = "";
   });
+}
+
+function normalizeInputAddress(input) {
+  return input
+    .replace(/\s+/g, " ")
+    .replace(/\bstr\./gi, "straße")
+    .replace(/\bstrasse\b/gi, "straße")
+    .trim();
+}
+
+function normalizeForGrouping(input) {
+  return input.toLocaleLowerCase("de-DE").replace(/\s+/g, " ").trim();
 }
 
 async function geocode(geocoder, address) {
@@ -309,12 +326,11 @@ function renderOptimizedRoute(points) {
 
   points.forEach((point, idx) => {
     const li = document.createElement("li");
-    const suffix =
-      point.deliveryCount > 1
-        ? ` (${point.deliveryCount} ${t("deliveries")})`
-        : "";
+    const suffix = point.deliveryCount > 1 ? ` (${point.deliveryCount} ${t("deliveries")})` : "";
+    const text = `${idx + 1}. ${point.raw.substring(0, 60)}${point.raw.length > 60 ? "…" : ""}${suffix}`;
 
-    li.textContent = `${idx + 1}. ${point.raw.substring(0, 60)}${point.raw.length > 60 ? "…" : ""}${suffix}`;
+    li.textContent = text;
+    li.title = point.deliveryCount > 1 ? point.deliveryNames.join("\n") : point.raw;
     ol.appendChild(li);
   });
 
@@ -332,7 +348,7 @@ function buildSegmentGoogleMapsUrl(segmentPoints) {
   if (segmentPoints.length === 0) return "";
 
   if (segmentPoints.length === 1) {
-    const singlePoint = encodeURIComponent(segmentPoints[0].formatted || segmentPoints[0].raw);
+    const singlePoint = encodeURIComponent(segmentPoints[0].navAddress || segmentPoints[0].formatted || segmentPoints[0].raw);
     return `https://www.google.com/maps/search/${singlePoint}`;
   }
 
@@ -350,12 +366,9 @@ function createSegmentCard(container, points, segmentNum) {
   const stopsList = points
     .map((point, idx) => {
       const globalIdx = (segmentNum - 1) * SEGMENT_SIZE + idx + 1;
-      const suffix =
-        point.deliveryCount > 1
-          ? ` (${point.deliveryCount} ${t("deliveries")})`
-          : "";
+      const suffix = point.deliveryCount > 1 ? ` (${point.deliveryCount} ${t("deliveries")})` : "";
 
-      return `<div class="stop-item">${globalIdx}. ${point.label}${suffix}</div>`;
+      return `<div class="stop-item" title="${point.deliveryNames.join("\n").replace(/"/g, "&quot;")}">${globalIdx}. ${point.label}${suffix}</div>`;
     })
     .join("");
 
