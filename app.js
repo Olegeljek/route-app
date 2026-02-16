@@ -20,6 +20,7 @@ const translations = {
     go: "🚀 В ПУТЬ",
     endOfSegment: "🏁 Конец сегмента",
     stop: "остановка",
+    deliveries: "доставок",
     reset: "Сбросить настройки и ключ",
     invalidKey: "Неверный формат ключа!",
     confirmDelete: "Удалить ключ?",
@@ -47,6 +48,7 @@ const translations = {
     go: "🚀 LOS",
     endOfSegment: "🏁 Ende des Segments",
     stop: "Halt",
+    deliveries: "Lieferungen",
     reset: "Einstellungen und Schlüssel zurücksetzen",
     invalidKey: "Ungültiges Schlüsselformat!",
     confirmDelete: "Schlüssel löschen?",
@@ -175,29 +177,35 @@ function startLogic() {
         throw new Error("Не удалось геокодировать базу");
       }
 
-      const points = [];
-      const uniquePlaces = new Set();
+      const pointsByKey = new Map();
 
-      for (const line of [...new Set(lines)]) {
+      for (const line of lines) {
         const geo = await geocode(geocoder, line);
         if (geo?.loc) {
           const fallbackGeoKey = `${geo.loc.lat.toFixed(6)},${geo.loc.lng.toFixed(6)}`;
-          const uniqueKey = geo.placeId || fallbackGeoKey;
+          const stopKey = geo.placeId || fallbackGeoKey;
+          const existing = pointsByKey.get(stopKey);
 
-          if (uniquePlaces.has(uniqueKey)) {
+          if (existing) {
+            existing.deliveryCount += 1;
+            existing.deliveryNames.push(line);
             continue;
           }
 
-          uniquePlaces.add(uniqueKey);
-          points.push({
+          pointsByKey.set(stopKey, {
             raw: line,
             loc: geo.loc,
             placeId: geo.placeId,
             formatted: geo.formatted,
-            label: line.split(",")[0].substring(0, 30)
+            navAddress: geo.navAddress,
+            label: line.substring(0, 30),
+            deliveryCount: 1,
+            deliveryNames: [line]
           });
         }
       }
+
+      const points = Array.from(pointsByKey.values());
 
       if (points.length === 0) {
         throw new Error("Не удалось найти ни одного адреса");
@@ -226,7 +234,8 @@ async function geocode(geocoder, address) {
         resolve({
           loc: top.geometry.location.toJSON(),
           placeId: top.place_id || "",
-          formatted: top.formatted_address || address
+          formatted: top.formatted_address || address,
+          navAddress: buildNavAddress(top)
         });
       } else {
         console.warn(`Не удалось геокодировать: ${address}`);
@@ -234,6 +243,25 @@ async function geocode(geocoder, address) {
       }
     });
   });
+}
+
+function buildNavAddress(geocodeResult) {
+  const components = geocodeResult.address_components || [];
+  const valueByType = (type) => {
+    const part = components.find((component) => component.types.includes(type));
+    return part?.long_name || "";
+  };
+
+  const street = [valueByType("route"), valueByType("street_number")].filter(Boolean).join(" ");
+  const postal = valueByType("postal_code");
+  const city =
+    valueByType("locality") ||
+    valueByType("postal_town") ||
+    valueByType("administrative_area_level_3") ||
+    valueByType("administrative_area_level_2");
+
+  const compactAddress = [street, postal, city].filter(Boolean).join(", ").trim();
+  return compactAddress || geocodeResult.formatted_address || "";
 }
 
 function optimizeRoute(points, start) {
@@ -281,7 +309,12 @@ function renderOptimizedRoute(points) {
 
   points.forEach((point, idx) => {
     const li = document.createElement("li");
-    li.textContent = `${idx + 1}. ${point.raw.substring(0, 60)}${point.raw.length > 60 ? "…" : ""}`;
+    const suffix =
+      point.deliveryCount > 1
+        ? ` (${point.deliveryCount} ${t("deliveries")})`
+        : "";
+
+    li.textContent = `${idx + 1}. ${point.raw.substring(0, 60)}${point.raw.length > 60 ? "…" : ""}${suffix}`;
     ol.appendChild(li);
   });
 
@@ -303,7 +336,7 @@ function buildSegmentGoogleMapsUrl(segmentPoints) {
     return `https://www.google.com/maps/search/${singlePoint}`;
   }
 
-  const encodedStops = segmentPoints.map((point) => encodeURIComponent(point.formatted || point.raw));
+  const encodedStops = segmentPoints.map((point) => encodeURIComponent(point.navAddress || point.formatted || point.raw));
   return `https://www.google.com/maps/dir/${encodedStops.join("/")}`;
 }
 
@@ -317,7 +350,12 @@ function createSegmentCard(container, points, segmentNum) {
   const stopsList = points
     .map((point, idx) => {
       const globalIdx = (segmentNum - 1) * SEGMENT_SIZE + idx + 1;
-      return `<div class="stop-item">${globalIdx}. ${point.label}</div>`;
+      const suffix =
+        point.deliveryCount > 1
+          ? ` (${point.deliveryCount} ${t("deliveries")})`
+          : "";
+
+      return `<div class="stop-item">${globalIdx}. ${point.label}${suffix}</div>`;
     })
     .join("");
 
