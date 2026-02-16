@@ -189,7 +189,8 @@ function startLogic() {
 
         const fallbackGeoKey = `${geo.loc.lat.toFixed(6)},${geo.loc.lng.toFixed(6)}`;
         const normalizedNavKey = normalizeForGrouping(geo.navAddress || geo.formatted || normalizedInput);
-        const stopKey = geo.placeId || normalizedNavKey || fallbackGeoKey;
+        const inputAddressId = buildInputAddressId(line);
+        const stopKey = inputAddressId || normalizedNavKey || fallbackGeoKey;
         const existing = pointsByKey.get(stopKey);
 
         if (existing) {
@@ -241,6 +242,55 @@ function normalizeInputAddress(input) {
 
 function normalizeForGrouping(input) {
   return input.toLocaleLowerCase("de-DE").replace(/\s+/g, " ").trim();
+}
+
+function buildInputAddressId(input) {
+  const normalized = normalizeInputAddress(input);
+  const parts = normalized.split(" ").filter(Boolean);
+
+  const postalIndex = parts.findIndex((part) => /^\d{5}$/.test(part));
+  if (postalIndex < 0 || postalIndex + 1 >= parts.length) {
+    return "";
+  }
+
+  const city = parts.slice(postalIndex + 1).join(" ");
+  const beforePostal = parts.slice(0, postalIndex);
+
+  let houseIndex = -1;
+  for (let i = beforePostal.length - 1; i >= 0; i--) {
+    if (/\d/.test(beforePostal[i])) {
+      houseIndex = i;
+      break;
+    }
+  }
+  if (houseIndex <= 0) {
+    return "";
+  }
+
+  const houseNumber = beforePostal[houseIndex];
+  const streetEnd = houseIndex - 1;
+
+  let streetMarkerIndex = -1;
+  for (let i = streetEnd; i >= 0; i--) {
+    if (/(straße|str\.?|allee|platz|pl\.?|weg|gasse|ring|ufer|chaussee)$/i.test(beforePostal[i])) {
+      streetMarkerIndex = i;
+      break;
+    }
+  }
+
+  let streetStart = Math.max(0, streetEnd - 1);
+  if (streetMarkerIndex >= 0) {
+    const marker = beforePostal[streetMarkerIndex];
+    const markerHasSuffix = /(straße|str\.?|allee|platz|pl\.?|weg|gasse|ring|ufer|chaussee)$/i.test(marker);
+    streetStart = markerHasSuffix && marker.includes("-") ? streetMarkerIndex : Math.max(0, streetMarkerIndex - 1);
+  }
+
+  const street = beforePostal.slice(streetStart, streetEnd + 1).join(" ");
+  if (!street || !city) {
+    return "";
+  }
+
+  return normalizeForGrouping(`${street} ${houseNumber} ${parts[postalIndex]} ${city}`);
 }
 
 async function geocode(geocoder, address) {
