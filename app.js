@@ -1,6 +1,19 @@
 const API_STORAGE_KEY = "user_google_maps_key_v1";
+const GEMINI_STORAGE_KEY = "user_gemini_key_v1";
 const LANG_STORAGE_KEY = "user_language_v1";
 const SEGMENT_SIZE = 9;
+
+const CATEGORY = {
+  PRIVATE: "private",
+  INSTITUTION: "institution",
+  CLINIC: "clinic"
+};
+
+const CATEGORY_ICON = {
+  [CATEGORY.PRIVATE]: "🏠",
+  [CATEGORY.INSTITUTION]: "🏢",
+  [CATEGORY.CLINIC]: "🏥"
+};
 
 const translations = {
   ru: {
@@ -8,6 +21,20 @@ const translations = {
     keyDesc: "Для начала работы вставьте API ключ Google Maps. Он сохранится локально.",
     keyPlaceholder: "Введите ключ AIzaSy...",
     activateBtn: "Активировать",
+    aiTitle: "🤖 AI обработка (Gemini)",
+    geminiPlaceholder: "Введите Gemini API key...",
+    saveGemini: "Сохранить Gemini ключ",
+    clearGemini: "Удалить Gemini ключ",
+    analyzeWithAi: "🧠 Распознать адреса ИИ",
+    aiKeyMissing: "Сначала укажите Gemini API ключ",
+    aiDone: "ИИ добавил адреса в список",
+    aiFail: "Ошибка ИИ: ",
+    mapTitle: "🗺️ Карта маршрута (просмотр)",
+    legendClinic: "Клиника [К]",
+    legendInstitution: "Учреждение [У]",
+    legendPrivate: "Частная доставка [Ч]",
+    copyLink: "📋 Копировать ссылку",
+    copied: "Ссылка скопирована",
     base: "🏁 База / Старт",
     statusReady: "Система готова",
     statusProcessing: "Обработка...",
@@ -36,6 +63,20 @@ const translations = {
     keyDesc: "Geben Sie Ihren Google Maps API-Schlüssel ein. Er wird lokal gespeichert.",
     keyPlaceholder: "Schlüssel AIzaSy... eingeben",
     activateBtn: "Aktivieren",
+    aiTitle: "🤖 AI Verarbeitung (Gemini)",
+    geminiPlaceholder: "Gemini API key eingeben...",
+    saveGemini: "Gemini Schlüssel speichern",
+    clearGemini: "Gemini Schlüssel löschen",
+    analyzeWithAi: "🧠 Adressen mit KI erkennen",
+    aiKeyMissing: "Bitte zuerst Gemini API Schlüssel eingeben",
+    aiDone: "KI hat Adressen hinzugefügt",
+    aiFail: "KI Fehler: ",
+    mapTitle: "🗺️ Routenkarte (Vorschau)",
+    legendClinic: "Klinik [K]",
+    legendInstitution: "Institution [U]",
+    legendPrivate: "Private Lieferung [P]",
+    copyLink: "📋 Link kopieren",
+    copied: "Link kopiert",
     base: "🏁 Basis / Start",
     statusReady: "System bereit",
     statusProcessing: "Verarbeitung...",
@@ -62,7 +103,12 @@ const translations = {
 };
 
 let currentLang = localStorage.getItem(LANG_STORAGE_KEY) || "ru";
-const savedKey = localStorage.getItem(API_STORAGE_KEY);
+const savedGoogleKey = localStorage.getItem(API_STORAGE_KEY);
+const savedGeminiKey = localStorage.getItem(GEMINI_STORAGE_KEY) || "";
+
+let mapPreview;
+let mapMarkers = [];
+let mapPolyline;
 
 function t(key) {
   return translations[currentLang][key] || key;
@@ -103,12 +149,29 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelector(".container").prepend(langBtn);
 
   updateUILanguage();
+
+  const geminiInput = document.getElementById("geminiKeyInput");
+  geminiInput.value = savedGeminiKey;
+
+  document.getElementById("btnSaveGemini").addEventListener("click", () => {
+    const key = geminiInput.value.trim();
+    if (!key) return;
+    localStorage.setItem(GEMINI_STORAGE_KEY, key);
+    alert("Gemini key saved");
+  });
+
+  document.getElementById("btnClearGemini").addEventListener("click", () => {
+    geminiInput.value = "";
+    localStorage.removeItem(GEMINI_STORAGE_KEY);
+  });
+
+  document.getElementById("btnAiAnalyze").addEventListener("click", runAiExtraction);
 });
 
-if (!savedKey) {
+if (!savedGoogleKey) {
   document.getElementById("setup-section").style.display = "block";
 } else {
-  initApp(savedKey);
+  initApp(savedGoogleKey);
 }
 
 document.getElementById("btnSaveKey").addEventListener("click", () => {
@@ -124,6 +187,7 @@ document.getElementById("btnSaveKey").addEventListener("click", () => {
 document.getElementById("btnResetKey").addEventListener("click", () => {
   if (confirm(t("confirmDelete"))) {
     localStorage.removeItem(API_STORAGE_KEY);
+    localStorage.removeItem(GEMINI_STORAGE_KEY);
     location.reload();
   }
 });
@@ -146,6 +210,8 @@ function initApp(key) {
 function startLogic() {
   const statusEl = document.getElementById("status");
   statusEl.textContent = t("statusReady");
+
+  initMapPreview();
 
   document.getElementById("btnBuild").addEventListener("click", async () => {
     const lines = document
@@ -182,10 +248,7 @@ function startLogic() {
       for (const line of lines) {
         const normalizedInput = normalizeInputAddress(line);
         const geo = await geocode(geocoder, normalizedInput);
-
-        if (!geo?.loc) {
-          continue;
-        }
+        if (!geo?.loc) continue;
 
         const fallbackGeoKey = `${geo.loc.lat.toFixed(6)},${geo.loc.lng.toFixed(6)}`;
         const normalizedNavKey = normalizeForGrouping(geo.navAddress || geo.formatted || normalizedInput);
@@ -199,26 +262,30 @@ function startLogic() {
           continue;
         }
 
+        const meta = parseLineMeta(line);
+
         pointsByKey.set(stopKey, {
           raw: line,
           loc: geo.loc,
           placeId: geo.placeId,
           formatted: geo.formatted,
           navAddress: geo.navAddress,
-          label: line.substring(0, 60),
+          label: (meta.displayName || geo.navAddress || line).substring(0, 60),
+          displayName: meta.displayName,
+          category: meta.category,
           deliveryCount: 1,
           deliveryNames: [line]
         });
       }
 
       const points = Array.from(pointsByKey.values());
-
       if (points.length === 0) {
         throw new Error("Не удалось найти ни одного адреса");
       }
 
       const optimized = optimizeRoute(points, baseLoc);
       renderOptimizedRoute(optimized);
+      renderMapRoute(baseLoc, optimized);
       statusEl.textContent = t("statusRouteReady");
     } catch (error) {
       alert(t("error") + error.message);
@@ -229,7 +296,43 @@ function startLogic() {
   document.getElementById("btnClear").addEventListener("click", () => {
     document.getElementById("textInput").value = "";
     document.getElementById("segmentsContainer").innerHTML = "";
+    clearMapRoute();
   });
+}
+
+function parseLineMeta(line) {
+  const normalized = line.trim();
+  const category = detectCategory(normalized);
+
+  if (category === CATEGORY.PRIVATE) {
+    return { category, displayName: "" };
+  }
+
+  const firstComma = normalized.indexOf(",");
+  if (firstComma > 0) {
+    return { category, displayName: normalized.slice(0, firstComma).trim() };
+  }
+
+  const postalMatch = normalized.match(/\b\d{5}\b/);
+  if (!postalMatch) {
+    return { category, displayName: normalized };
+  }
+
+  const beforePostal = normalized.slice(0, postalMatch.index).trim();
+  const tokens = beforePostal.split(/\s+/);
+  const displayName = tokens.slice(0, Math.max(1, tokens.length - 3)).join(" ");
+  return { category, displayName: displayName || normalized };
+}
+
+function detectCategory(value) {
+  const v = value.toLowerCase();
+  if (v.includes("[к]") || v.includes("praxis") || v.includes("mvz") || v.includes("klinik") || v.includes("arzt")) {
+    return CATEGORY.CLINIC;
+  }
+  if (v.includes("[у]") || v.includes("amt") || v.includes("schule") || v.includes("pflege") || v.includes("heim")) {
+    return CATEGORY.INSTITUTION;
+  }
+  return CATEGORY.PRIVATE;
 }
 
 function normalizeInputAddress(input) {
@@ -249,9 +352,7 @@ function buildInputAddressId(input) {
   const parts = normalized.split(" ").filter(Boolean);
 
   const postalIndex = parts.findIndex((part) => /^\d{5}$/.test(part));
-  if (postalIndex < 0 || postalIndex + 1 >= parts.length) {
-    return "";
-  }
+  if (postalIndex < 0 || postalIndex + 1 >= parts.length) return "";
 
   const city = parts.slice(postalIndex + 1).join(" ");
   const beforePostal = parts.slice(0, postalIndex);
@@ -263,32 +364,11 @@ function buildInputAddressId(input) {
       break;
     }
   }
-  if (houseIndex <= 0) {
-    return "";
-  }
+  if (houseIndex <= 0) return "";
 
   const houseNumber = beforePostal[houseIndex];
-  const streetEnd = houseIndex - 1;
-
-  let streetMarkerIndex = -1;
-  for (let i = streetEnd; i >= 0; i--) {
-    if (/(straße|str\.?|allee|platz|pl\.?|weg|gasse|ring|ufer|chaussee)$/i.test(beforePostal[i])) {
-      streetMarkerIndex = i;
-      break;
-    }
-  }
-
-  let streetStart = Math.max(0, streetEnd - 1);
-  if (streetMarkerIndex >= 0) {
-    const marker = beforePostal[streetMarkerIndex];
-    const markerHasSuffix = /(straße|str\.?|allee|platz|pl\.?|weg|gasse|ring|ufer|chaussee)$/i.test(marker);
-    streetStart = markerHasSuffix && marker.includes("-") ? streetMarkerIndex : Math.max(0, streetMarkerIndex - 1);
-  }
-
-  const street = beforePostal.slice(streetStart, streetEnd + 1).join(" ");
-  if (!street || !city) {
-    return "";
-  }
+  const street = beforePostal.slice(Math.max(0, houseIndex - 2), houseIndex).join(" ");
+  if (!street || !city) return "";
 
   return normalizeForGrouping(`${street} ${houseNumber} ${parts[postalIndex]} ${city}`);
 }
@@ -377,9 +457,11 @@ function renderOptimizedRoute(points) {
   points.forEach((point, idx) => {
     const li = document.createElement("li");
     const suffix = point.deliveryCount > 1 ? ` (${point.deliveryCount} ${t("deliveries")})` : "";
-    const text = `${idx + 1}. ${point.raw.substring(0, 60)}${point.raw.length > 60 ? "…" : ""}${suffix}`;
+    const titleText = point.category === CATEGORY.PRIVATE
+      ? (point.navAddress || point.raw)
+      : (point.displayName || point.raw);
 
-    li.textContent = text;
+    li.textContent = `${idx + 1}. ${CATEGORY_ICON[point.category]} ${titleText}${suffix}`;
     li.title = point.deliveryCount > 1 ? point.deliveryNames.join("\n") : point.raw;
     ol.appendChild(li);
   });
@@ -417,8 +499,11 @@ function createSegmentCard(container, points, segmentNum) {
     .map((point, idx) => {
       const globalIdx = (segmentNum - 1) * SEGMENT_SIZE + idx + 1;
       const suffix = point.deliveryCount > 1 ? ` (${point.deliveryCount} ${t("deliveries")})` : "";
+      const name = point.category === CATEGORY.PRIVATE
+        ? (point.navAddress || point.raw)
+        : (point.displayName || point.raw);
 
-      return `<div class="stop-item" title="${point.deliveryNames.join("\n").replace(/"/g, "&quot;")}">${globalIdx}. ${point.label}${suffix}</div>`;
+      return `<div class="stop-item" title="${point.deliveryNames.join("\n").replace(/"/g, "&quot;")}">${globalIdx}. ${CATEGORY_ICON[point.category]} ${name}${suffix}</div>`;
     })
     .join("");
 
@@ -429,15 +514,179 @@ function createSegmentCard(container, points, segmentNum) {
     </div>
     <div class="stops-preview">${stopsList}</div>
     <button class="btn btn-green nav-btn" data-url="${navUrl}">${t("go")}</button>
+    <button class="btn btn-gray copy-btn" data-copy-url="${navUrl}">${t("copyLink")}</button>
     <div class="segment-footer">${t("endOfSegment")}: ${points[points.length - 1].label}</div>
   `;
 
   container.appendChild(box);
 }
 
-document.addEventListener("click", (event) => {
+function initMapPreview() {
+  const mapEl = document.getElementById("mapPreview");
+  mapPreview = new google.maps.Map(mapEl, {
+    center: { lat: 51.65, lng: 12.28 },
+    zoom: 11,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: true
+  });
+}
+
+function clearMapRoute() {
+  mapMarkers.forEach((m) => m.setMap(null));
+  mapMarkers = [];
+  if (mapPolyline) mapPolyline.setMap(null);
+  mapPolyline = null;
+}
+
+function renderMapRoute(baseLoc, points) {
+  if (!mapPreview) return;
+  clearMapRoute();
+
+  const path = [baseLoc, ...points.map((p) => p.loc), baseLoc];
+
+  mapPolyline = new google.maps.Polyline({
+    path,
+    geodesic: true,
+    strokeColor: "#007AFF",
+    strokeOpacity: 0.85,
+    strokeWeight: 4,
+    map: mapPreview
+  });
+
+  const baseMarker = new google.maps.Marker({
+    position: baseLoc,
+    map: mapPreview,
+    label: "S",
+    title: "Start / Base"
+  });
+  mapMarkers.push(baseMarker);
+
+  points.forEach((point, idx) => {
+    const name = point.category === CATEGORY.PRIVATE ? (point.navAddress || point.raw) : (point.displayName || point.raw);
+    const marker = new google.maps.Marker({
+      position: point.loc,
+      map: mapPreview,
+      label: `${idx + 1}`,
+      title: `${CATEGORY_ICON[point.category]} ${name}`
+    });
+    mapMarkers.push(marker);
+  });
+
+  const bounds = new google.maps.LatLngBounds();
+  path.forEach((coord) => bounds.extend(coord));
+  mapPreview.fitBounds(bounds, 60);
+}
+
+async function runAiExtraction() {
+  const key = document.getElementById("geminiKeyInput").value.trim() || localStorage.getItem(GEMINI_STORAGE_KEY);
+  if (!key) {
+    alert(t("aiKeyMissing"));
+    return;
+  }
+
+  localStorage.setItem(GEMINI_STORAGE_KEY, key);
+
+  const textInput = document.getElementById("textInput");
+  const imageFile = document.getElementById("aiImageInput").files[0];
+  const rawText = textInput.value.trim();
+
+  if (!rawText && !imageFile) {
+    return;
+  }
+
+  try {
+    const parts = [
+      {
+        text: `Проанализируй ввод. Верни ТОЛЬКО JSON-масив объектов вида: [{"raw":"...","type":"Ч|У|К","name":"...","address":"..."}].
+Если тип Ч - в name ставь пусто, в address только адрес.
+Если тип У/К - в name название, в address адрес.
+Не добавляй пояснения.`
+      }
+    ];
+
+    if (rawText) {
+      parts.push({ text: `Текст:\n${rawText}` });
+    }
+
+    if (imageFile) {
+      const base64 = await fileToBase64(imageFile);
+      parts.push({ inline_data: { mime_type: imageFile.type || "image/jpeg", data: base64 } });
+    }
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ role: "user", parts }] })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || response.statusText);
+    }
+
+    const data = await response.json();
+    const output = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("\n") || "";
+    const extracted = parseJsonFromText(output);
+
+    const lines = extracted
+      .filter((item) => item && item.address)
+      .map((item) => {
+        const type = (item.type || "").toUpperCase();
+        if (type === "К") return `[К] ${item.name ? `${item.name} ` : ""}${item.address}`.trim();
+        if (type === "У") return `[У] ${item.name ? `${item.name} ` : ""}${item.address}`.trim();
+        return `[Ч] ${item.address}`;
+      });
+
+    if (lines.length > 0) {
+      const existing = textInput.value.trim();
+      textInput.value = existing ? `${existing}\n${lines.join("\n")}` : lines.join("\n");
+    }
+
+    alert(t("aiDone"));
+  } catch (error) {
+    alert(t("aiFail") + error.message);
+  }
+}
+
+function parseJsonFromText(text) {
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  const start = cleaned.indexOf("[");
+  const end = cleaned.lastIndexOf("]");
+  if (start < 0 || end < 0 || end <= start) return [];
+  const jsonText = cleaned.slice(start, end + 1);
+  try {
+    return JSON.parse(jsonText);
+  } catch {
+    return [];
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || "";
+      resolve(String(result).split(",")[1] || "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+document.addEventListener("click", async (event) => {
   if (event.target.classList.contains("nav-btn")) {
     const url = event.target.getAttribute("data-url");
     window.open(url, "_blank");
+  }
+
+  if (event.target.classList.contains("copy-btn")) {
+    const url = event.target.getAttribute("data-copy-url");
+    try {
+      await navigator.clipboard.writeText(url);
+      alert(t("copied"));
+    } catch {
+      window.prompt("Copy this link", url);
+    }
   }
 });
