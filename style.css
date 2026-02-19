@@ -20,13 +20,12 @@ body {
 }
 
 .container {
-  max-width: 500px;
+  max-width: 700px;
   width: 100%;
   margin: 0 auto;
   position: relative;
 }
 
-/* Кнопка языка */
 .lang-btn {
   position: absolute;
   top: -10px;
@@ -47,7 +46,6 @@ body {
   padding: 16px;
   margin-bottom: 16px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  transition: all 0.2s;
 }
 
 .title {
@@ -62,10 +60,8 @@ body {
   padding: 14px;
   border: 1px solid #ddd;
   border-radius: 12px;
-  box-sizing: border-box;
   font-size: 15px;
   background: white;
-  transition: border-color 0.2s;
 }
 
 .input:focus, select:focus, textarea:focus {
@@ -93,32 +89,14 @@ textarea {
   font-size: 15px;
   font-weight: 500;
   flex: 1;
-  transition: opacity 0.2s, transform 0.1s;
   background: white;
   border: 1px solid #e0e0e0;
 }
 
-.btn:active {
-  transform: scale(0.98);
-}
-
-.btn-blue {
-  background: var(--primary);
-  color: white;
-  border: none;
-}
-
-.btn-green {
-  background: #34C759;
-  color: white;
-  border: none;
-}
-
-.btn-gray {
-  background: #E5E5EA;
-  color: #333;
-  border: none;
-}
+.btn:active { transform: scale(0.98); }
+.btn-blue { background: var(--primary); color: white; border: none; }
+.btn-green { background: #34C759; color: white; border: none; }
+.btn-gray { background: #E5E5EA; color: #333; border: none; }
 
 .status {
   font-size: 13px;
@@ -136,11 +114,27 @@ textarea {
   margin-bottom: 12px;
 }
 
-.hidden {
-  display: none;
+#mapPreview {
+  width: 100%;
+  height: 360px;
+  border-radius: 12px;
+  border: 1px solid #e5e5ea;
+  background: #fafafa;
 }
 
-/* Сегменты */
+.map-legend {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #444;
+}
+
+.legend-icon {
+  display: inline-block;
+  width: 24px;
+}
+
 .segment-box {
   border-left: 5px solid #34C759;
   margin-bottom: 16px;
@@ -155,18 +149,8 @@ textarea {
   border-bottom: 1px solid #f0f0f0;
 }
 
-.segment-title {
-  font-weight: 600;
-  color: #34C759;
-  font-size: 16px;
-}
-
-.stops-count {
-  background: #f0f0f0;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 13px;
-}
+.segment-title { font-weight: 600; color: #34C759; font-size: 16px; }
+.stops-count { background: #f0f0f0; padding: 4px 10px; border-radius: 20px; font-size: 13px; }
 
 .stops-preview {
   background: #f9f9f9;
@@ -177,15 +161,8 @@ textarea {
   line-height: 1.5;
 }
 
-.stop-item {
-  padding: 6px 0;
-  border-bottom: 1px dashed #eee;
-  color: #333;
-}
-
-.stop-item:last-child {
-  border-bottom: none;
-}
+.stop-item { padding: 6px 0; border-bottom: 1px dashed #eee; color: #333; }
+.stop-item:last-child { border-bottom: none; }
 
 .segment-footer {
   font-size: 12px;
@@ -208,6 +185,8 @@ textarea {
   border-radius: 14px;
 }
 
+.copy-btn { width: 100%; margin-top: 8px; }
+
 .full-list {
   background: #f0f8ff;
   border: 2px dashed var(--primary);
@@ -220,17 +199,9 @@ textarea {
   color: #333;
 }
 
-.route-list li {
-  margin-bottom: 6px;
-}
+.route-list li { margin-bottom: 6px; }
 
-/* Адаптация для мобильных */
-@media (max-width: 400px) {
-  .btn {
-    padding: 12px;
-    font-size: 14px;
-  }
-  .title {
-    font-size: 16px;
-  }
+@media (max-width: 500px) {
+  .container { max-width: 100%; }
+  #mapPreview { height: 280px; }
 }
