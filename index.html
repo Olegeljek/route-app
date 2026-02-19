@@ -8,8 +8,6 @@
 </head>
 <body>
   <div class="container">
-    <!-- Кнопка переключения языка будет добавлена скриптом -->
-    
     <div id="setup-section" class="card" style="display:none; border: 2px solid #007AFF;">
       <div class="title" data-i18n="activate">🔑 Активация доступа</div>
       <p style="font-size: 13px; margin: 10px 0;" data-i18n="keyDesc">Для начала работы вставьте API ключ Google Maps. Он сохранится локально.</p>
@@ -32,6 +30,19 @@
       </div>
 
       <div class="card">
+        <div class="title" data-i18n="aiTitle">🤖 AI обработка (Gemini)</div>
+        <input type="password" id="geminiKeyInput" class="input" data-i18n-placeholder="geminiPlaceholder" placeholder="Введите Gemini API key..." />
+        <div class="row">
+          <button class="btn btn-blue" id="btnSaveGemini" data-i18n="saveGemini">Сохранить Gemini ключ</button>
+          <button class="btn btn-gray" id="btnClearGemini" data-i18n="clearGemini">Удалить Gemini ключ</button>
+        </div>
+        <input id="aiImageInput" class="input" type="file" accept="image/*" style="margin-top:10px;" />
+        <div class="row">
+          <button class="btn btn-blue" id="btnAiAnalyze" data-i18n="analyzeWithAi">🧠 Распознать адреса ИИ</button>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="title" data-i18n="addresses">📥 Адреса для доставки</div>
         <textarea id="textInput" data-i18n-placeholder="textPlaceholder" placeholder="Вставьте адреса (каждый с новой строки)"></textarea>
         <div class="row">
@@ -40,8 +51,18 @@
         <button class="btn btn-green" id="btnBuild" style="width:100%; margin-top:10px; font-weight: bold;" data-i18n="buildRoute">🚀 ПОСТРОИТЬ МАРШРУТ</button>
       </div>
 
+      <div class="card">
+        <div class="title" data-i18n="mapTitle">🗺️ Карта маршрута (просмотр)</div>
+        <div id="mapPreview"></div>
+        <div class="map-legend">
+          <div><span class="legend-icon">🏥</span><span data-i18n="legendClinic">Клиника [К]</span></div>
+          <div><span class="legend-icon">🏢</span><span data-i18n="legendInstitution">Учреждение [У]</span></div>
+          <div><span class="legend-icon">🏠</span><span data-i18n="legendPrivate">Частная доставка [Ч]</span></div>
+        </div>
+      </div>
+
       <div id="segmentsContainer"></div>
-      
+
       <div style="text-align: center;">
         <button id="btnResetKey" style="background: none; border: none; color: #999; font-size: 10px; text-decoration: underline; cursor: pointer; margin-top: 30px;" data-i18n="reset">Сбросить настройки и ключ</button>
       </div>
