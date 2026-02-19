@@ -15,6 +15,13 @@
       <button class="btn btn-blue" id="btnSaveKey" style="margin-top:10px; width:100%;" data-i18n="activateBtn">Активировать</button>
     </div>
 
+    <div id="gemini-setup-section" class="card" style="display:none; border: 2px solid #34C759;">
+      <div class="title" data-i18n="geminiSetupTitle">🤖 Активация Gemini</div>
+      <p style="font-size: 13px; margin: 10px 0;" data-i18n="geminiSetupDesc">Введите Gemini API ключ один раз. Он сохранится локально и будет использоваться для обработки текста и фото.</p>
+      <input type="password" id="geminiSetupInput" class="input" data-i18n-placeholder="geminiPlaceholder" placeholder="Введите Gemini API key..." />
+      <button class="btn btn-blue" id="btnSaveGeminiSetup" style="margin-top:10px; width:100%;" data-i18n="saveGemini">Сохранить Gemini ключ</button>
+    </div>
+
     <div id="main-app" style="display:none;">
       <div class="card">
         <div class="header">
@@ -36,7 +43,8 @@
           <button class="btn btn-blue" id="btnSaveGemini" data-i18n="saveGemini">Сохранить Gemini ключ</button>
           <button class="btn btn-gray" id="btnClearGemini" data-i18n="clearGemini">Удалить Gemini ключ</button>
         </div>
-        <input id="aiImageInput" class="input" type="file" accept="image/*" style="margin-top:10px;" />
+        <input id="aiImageInput" class="input" type="file" accept="image/*" multiple style="margin-top:10px;" />
+        <ul id="aiFileStatus" class="file-status"></ul>
         <div class="row">
           <button class="btn btn-blue" id="btnAiAnalyze" data-i18n="analyzeWithAi">🧠 Распознать адреса ИИ</button>
         </div>
