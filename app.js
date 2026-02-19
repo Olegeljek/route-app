@@ -15,20 +15,36 @@ const CATEGORY_ICON = {
   [CATEGORY.CLINIC]: "🏥"
 };
 
+const GEMINI_MODEL_PREFERENCE = [
+  "models/gemini-2.5-flash",
+  "models/gemini-2.0-flash",
+  "models/gemini-1.5-flash-latest",
+  "models/gemini-1.5-pro-latest"
+];
+
+let resolvedGeminiModel = "";
+
 const translations = {
   ru: {
     activate: "🔑 Активация доступа",
     keyDesc: "Для начала работы вставьте API ключ Google Maps. Он сохранится локально.",
     keyPlaceholder: "Введите ключ AIzaSy...",
     activateBtn: "Активировать",
+    geminiSetupTitle: "🤖 Активация Gemini",
+    geminiSetupDesc: "Введите Gemini API ключ один раз. Он сохранится локально и будет использоваться для обработки текста и фото.",
     aiTitle: "🤖 AI обработка (Gemini)",
     geminiPlaceholder: "Введите Gemini API key...",
     saveGemini: "Сохранить Gemini ключ",
     clearGemini: "Удалить Gemini ключ",
     analyzeWithAi: "🧠 Распознать адреса ИИ",
     aiKeyMissing: "Сначала укажите Gemini API ключ",
-    aiDone: "ИИ добавил адреса в список",
+    aiDone: "ИИ добавил и нормализовал адреса в список",
     aiFail: "Ошибка ИИ: ",
+    aiFileQueued: "в очереди",
+    aiFileLoading: "обработка...",
+    aiFileDone: "готово",
+    aiFileError: "ошибка",
+    aiConfirmBuild: "Построить маршрут по обработанному списку?",
     mapTitle: "🗺️ Карта маршрута (просмотр)",
     legendClinic: "Клиника [К]",
     legendInstitution: "Учреждение [У]",
@@ -50,7 +66,7 @@ const translations = {
     deliveries: "доставок",
     reset: "Сбросить настройки и ключ",
     invalidKey: "Неверный формат ключа!",
-    confirmDelete: "Удалить ключ?",
+    confirmDelete: "Удалить ключи и настройки?",
     apiError: "Ошибка ключа API!",
     error: "Ошибка: ",
     sandersdorf: "Зандерсдорф",
@@ -63,14 +79,21 @@ const translations = {
     keyDesc: "Geben Sie Ihren Google Maps API-Schlüssel ein. Er wird lokal gespeichert.",
     keyPlaceholder: "Schlüssel AIzaSy... eingeben",
     activateBtn: "Aktivieren",
+    geminiSetupTitle: "🤖 Gemini aktivieren",
+    geminiSetupDesc: "Geben Sie den Gemini API-Schlüssel einmal ein. Er wird lokal gespeichert.",
     aiTitle: "🤖 AI Verarbeitung (Gemini)",
     geminiPlaceholder: "Gemini API key eingeben...",
     saveGemini: "Gemini Schlüssel speichern",
     clearGemini: "Gemini Schlüssel löschen",
     analyzeWithAi: "🧠 Adressen mit KI erkennen",
     aiKeyMissing: "Bitte zuerst Gemini API Schlüssel eingeben",
-    aiDone: "KI hat Adressen hinzugefügt",
+    aiDone: "KI hat Adressen hinzugefügt und normalisiert",
     aiFail: "KI Fehler: ",
+    aiFileQueued: "in Warteschlange",
+    aiFileLoading: "wird verarbeitet...",
+    aiFileDone: "fertig",
+    aiFileError: "Fehler",
+    aiConfirmBuild: "Route mit der verarbeiteten Liste erstellen?",
     mapTitle: "🗺️ Routenkarte (Vorschau)",
     legendClinic: "Klinik [K]",
     legendInstitution: "Institution [U]",
@@ -92,7 +115,7 @@ const translations = {
     deliveries: "Lieferungen",
     reset: "Einstellungen und Schlüssel zurücksetzen",
     invalidKey: "Ungültiges Schlüsselformat!",
-    confirmDelete: "Schlüssel löschen?",
+    confirmDelete: "Schlüssel und Einstellungen löschen?",
     apiError: "API-Schlüssel Fehler!",
     error: "Fehler: ",
     sandersdorf: "Sandersdorf",
@@ -149,54 +172,85 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelector(".container").prepend(langBtn);
 
   updateUILanguage();
+  bindSetupButtons();
+  initStartupFlow();
+});
 
+function bindSetupButtons() {
+  document.getElementById("btnSaveKey").addEventListener("click", () => {
+    const key = document.getElementById("apiKeyInput").value.trim();
+    if (key.length > 20 && key.startsWith("AIza")) {
+      localStorage.setItem(API_STORAGE_KEY, key);
+      location.reload();
+    } else {
+      alert(t("invalidKey"));
+    }
+  });
+
+  document.getElementById("btnSaveGeminiSetup").addEventListener("click", () => {
+    const key = document.getElementById("geminiSetupInput").value.trim();
+    if (!key) {
+      alert(t("aiKeyMissing"));
+      return;
+    }
+
+    localStorage.setItem(GEMINI_STORAGE_KEY, key);
+    location.reload();
+  });
+
+  document.getElementById("btnResetKey").addEventListener("click", () => {
+    if (confirm(t("confirmDelete"))) {
+      localStorage.removeItem(API_STORAGE_KEY);
+      localStorage.removeItem(GEMINI_STORAGE_KEY);
+      location.reload();
+    }
+  });
+}
+
+function initStartupFlow() {
+  if (!savedGoogleKey) {
+    document.getElementById("setup-section").style.display = "block";
+    return;
+  }
+
+  if (!savedGeminiKey) {
+    document.getElementById("gemini-setup-section").style.display = "block";
+    return;
+  }
+
+  initApp(savedGoogleKey, savedGeminiKey);
+}
+
+function initApp(googleKey, geminiKey) {
+  document.getElementById("main-app").style.display = "block";
   const geminiInput = document.getElementById("geminiKeyInput");
-  geminiInput.value = savedGeminiKey;
+  geminiInput.value = geminiKey;
 
   document.getElementById("btnSaveGemini").addEventListener("click", () => {
     const key = geminiInput.value.trim();
-    if (!key) return;
+    if (!key) {
+      alert(t("aiKeyMissing"));
+      return;
+    }
+
     localStorage.setItem(GEMINI_STORAGE_KEY, key);
+    resolvedGeminiModel = "";
     alert("Gemini key saved");
   });
 
   document.getElementById("btnClearGemini").addEventListener("click", () => {
     geminiInput.value = "";
     localStorage.removeItem(GEMINI_STORAGE_KEY);
+    resolvedGeminiModel = "";
+    alert(t("aiKeyMissing"));
   });
 
-  document.getElementById("btnAiAnalyze").addEventListener("click", runAiExtraction);
-});
-
-if (!savedGoogleKey) {
-  document.getElementById("setup-section").style.display = "block";
-} else {
-  initApp(savedGoogleKey);
-}
-
-document.getElementById("btnSaveKey").addEventListener("click", () => {
-  const key = document.getElementById("apiKeyInput").value.trim();
-  if (key.length > 20 && key.startsWith("AIza")) {
-    localStorage.setItem(API_STORAGE_KEY, key);
-    location.reload();
-  } else {
-    alert(t("invalidKey"));
-  }
-});
-
-document.getElementById("btnResetKey").addEventListener("click", () => {
-  if (confirm(t("confirmDelete"))) {
-    localStorage.removeItem(API_STORAGE_KEY);
-    localStorage.removeItem(GEMINI_STORAGE_KEY);
-    location.reload();
-  }
-});
-
-function initApp(key) {
-  document.getElementById("main-app").style.display = "block";
+  document.getElementById("btnAiAnalyze").addEventListener("click", async () => {
+    await runAiExtraction({ appendToTextarea: true });
+  });
 
   const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,places`;
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${googleKey}&libraries=geometry,places`;
   script.defer = true;
   script.onload = () => startLogic();
   script.onerror = () => {
@@ -214,15 +268,24 @@ function startLogic() {
   initMapPreview();
 
   document.getElementById("btnBuild").addEventListener("click", async () => {
-    const lines = document
+    const rawLines = document
       .getElementById("textInput")
       .value.split("\n")
       .map((line) => line.trim())
       .filter((line) => line.length > 5);
 
-    if (lines.length === 0) return;
+    if (rawLines.length === 0) return;
 
     statusEl.textContent = t("statusProcessing");
+
+    const reviewedLines = await normalizeManualTextWithAi(rawLines);
+    document.getElementById("textInput").value = reviewedLines.join("\n");
+
+    if (!confirm(`${t("aiConfirmBuild")}\n\n${reviewedLines.slice(0, 6).join("\n")}${reviewedLines.length > 6 ? "\n..." : ""}`)) {
+      statusEl.textContent = t("statusReady");
+      return;
+    }
+
     const geocoder = new google.maps.Geocoder();
 
     const bases = {
@@ -245,7 +308,7 @@ function startLogic() {
 
       const pointsByKey = new Map();
 
-      for (const line of lines) {
+      for (const line of reviewedLines) {
         const normalizedInput = normalizeInputAddress(line);
         const geo = await geocode(geocoder, normalizedInput);
         if (!geo?.loc) continue;
@@ -262,7 +325,7 @@ function startLogic() {
           continue;
         }
 
-        const meta = parseLineMeta(line);
+        const meta = parseLineMeta(line, geo.navAddress || geo.formatted || line);
 
         pointsByKey.set(stopKey, {
           raw: line,
@@ -270,8 +333,8 @@ function startLogic() {
           placeId: geo.placeId,
           formatted: geo.formatted,
           navAddress: geo.navAddress,
-          label: (meta.displayName || geo.navAddress || line).substring(0, 60),
-          displayName: meta.displayName,
+          label: (meta.displayLabel || geo.navAddress || line).substring(0, 80),
+          displayLabel: meta.displayLabel,
           category: meta.category,
           deliveryCount: 1,
           deliveryNames: [line]
@@ -296,32 +359,72 @@ function startLogic() {
   document.getElementById("btnClear").addEventListener("click", () => {
     document.getElementById("textInput").value = "";
     document.getElementById("segmentsContainer").innerHTML = "";
+    document.getElementById("aiFileStatus").innerHTML = "";
     clearMapRoute();
   });
 }
 
-function parseLineMeta(line) {
-  const normalized = line.trim();
-  const category = detectCategory(normalized);
+async function normalizeManualTextWithAi(lines) {
+  const key = document.getElementById("geminiKeyInput").value.trim() || localStorage.getItem(GEMINI_STORAGE_KEY);
+  if (!key) return lines;
+
+  const prompt = [
+    "Нормализуй список адресов и верни только JSON-массив строк.",
+    "Для клиник и учреждений формат строки: [К] Название, Адрес или [У] Название, Адрес.",
+    "Для частных доставок формат: [Ч] Адрес.",
+    "Если в строке есть только 'Praxis', дополни названием/адресом из этой же строки.",
+    "Не удаляй элементы без причины."
+  ].join("\n");
+
+  try {
+    const output = await generateGeminiText(key, [{ text: `${prompt}\n\n${lines.join("\n")}` }]);
+    const parsed = parseStringArrayFromText(output);
+    return parsed.length > 0 ? parsed : lines;
+  } catch {
+    return lines;
+  }
+}
+
+function parseLineMeta(line, fallbackAddress) {
+  const value = line.trim();
+  const category = detectCategory(value);
+
+  const cleaned = value.replace(/^\[[^\]]+\]\s*/u, "").trim();
+  const postalMatch = cleaned.match(/\b\d{5}\b/u);
+
+  if (!postalMatch) {
+    const plain = cleaned || fallbackAddress;
+    return {
+      category,
+      displayLabel: category === CATEGORY.PRIVATE ? plain : plain
+    };
+  }
+
+  const splitIndex = postalMatch.index;
+  const beforePostal = cleaned.slice(0, splitIndex).trim();
+  const afterPostal = cleaned.slice(splitIndex).trim();
+
+  const markerMatch = beforePostal.match(/(.+?)\s([A-Za-zÄÖÜäöüß\-\.]+\s*\d+[A-Za-z]?\s*)$/u);
+  let namePart = "";
+  let addressPart = fallbackAddress || cleaned;
+
+  if (markerMatch) {
+    namePart = markerMatch[1].trim();
+    addressPart = `${markerMatch[2].trim()} ${afterPostal}`.replace(/\s+/g, " ").trim();
+  } else {
+    addressPart = `${beforePostal} ${afterPostal}`.replace(/\s+/g, " ").trim();
+  }
 
   if (category === CATEGORY.PRIVATE) {
-    return { category, displayName: "" };
+    return { category, displayLabel: addressPart || fallbackAddress };
   }
 
-  const firstComma = normalized.indexOf(",");
-  if (firstComma > 0) {
-    return { category, displayName: normalized.slice(0, firstComma).trim() };
+  if (!namePart || /^praxis$/i.test(namePart)) {
+    namePart = beforePostal.split(/\s+/).slice(0, 2).join(" ");
   }
 
-  const postalMatch = normalized.match(/\b\d{5}\b/);
-  if (!postalMatch) {
-    return { category, displayName: normalized };
-  }
-
-  const beforePostal = normalized.slice(0, postalMatch.index).trim();
-  const tokens = beforePostal.split(/\s+/);
-  const displayName = tokens.slice(0, Math.max(1, tokens.length - 3)).join(" ");
-  return { category, displayName: displayName || normalized };
+  const finalName = namePart || "Praxis";
+  return { category, displayLabel: `${finalName}, ${addressPart || fallbackAddress}` };
 }
 
 function detectCategory(value) {
@@ -457,9 +560,7 @@ function renderOptimizedRoute(points) {
   points.forEach((point, idx) => {
     const li = document.createElement("li");
     const suffix = point.deliveryCount > 1 ? ` (${point.deliveryCount} ${t("deliveries")})` : "";
-    const titleText = point.category === CATEGORY.PRIVATE
-      ? (point.navAddress || point.raw)
-      : (point.displayName || point.raw);
+    const titleText = point.displayLabel || point.navAddress || point.raw;
 
     li.textContent = `${idx + 1}. ${CATEGORY_ICON[point.category]} ${titleText}${suffix}`;
     li.title = point.deliveryCount > 1 ? point.deliveryNames.join("\n") : point.raw;
@@ -499,9 +600,7 @@ function createSegmentCard(container, points, segmentNum) {
     .map((point, idx) => {
       const globalIdx = (segmentNum - 1) * SEGMENT_SIZE + idx + 1;
       const suffix = point.deliveryCount > 1 ? ` (${point.deliveryCount} ${t("deliveries")})` : "";
-      const name = point.category === CATEGORY.PRIVATE
-        ? (point.navAddress || point.raw)
-        : (point.displayName || point.raw);
+      const name = point.displayLabel || point.navAddress || point.raw;
 
       return `<div class="stop-item" title="${point.deliveryNames.join("\n").replace(/"/g, "&quot;")}">${globalIdx}. ${CATEGORY_ICON[point.category]} ${name}${suffix}</div>`;
     })
@@ -563,7 +662,7 @@ function renderMapRoute(baseLoc, points) {
   mapMarkers.push(baseMarker);
 
   points.forEach((point, idx) => {
-    const name = point.category === CATEGORY.PRIVATE ? (point.navAddress || point.raw) : (point.displayName || point.raw);
+    const name = point.displayLabel || point.navAddress || point.raw;
     const marker = new google.maps.Marker({
       position: point.loc,
       map: mapPreview,
@@ -578,88 +677,193 @@ function renderMapRoute(baseLoc, points) {
   mapPreview.fitBounds(bounds, 60);
 }
 
-async function runAiExtraction() {
+async function runAiExtraction({ appendToTextarea }) {
   const key = document.getElementById("geminiKeyInput").value.trim() || localStorage.getItem(GEMINI_STORAGE_KEY);
   if (!key) {
     alert(t("aiKeyMissing"));
-    return;
+    return [];
   }
 
   localStorage.setItem(GEMINI_STORAGE_KEY, key);
 
   const textInput = document.getElementById("textInput");
-  const imageFile = document.getElementById("aiImageInput").files[0];
+  const files = Array.from(document.getElementById("aiImageInput").files || []);
   const rawText = textInput.value.trim();
 
-  if (!rawText && !imageFile) {
-    return;
+  if (!rawText && files.length === 0) {
+    return [];
   }
 
+  const allItems = [];
+  const statusEl = document.getElementById("aiFileStatus");
+  statusEl.innerHTML = "";
+
   try {
-    const parts = [
-      {
-        text: `Проанализируй ввод. Верни ТОЛЬКО JSON-масив объектов вида: [{"raw":"...","type":"Ч|У|К","name":"...","address":"..."}].
-Если тип Ч - в name ставь пусто, в address только адрес.
-Если тип У/К - в name название, в address адрес.
-Не добавляй пояснения.`
-      }
-    ];
-
     if (rawText) {
-      parts.push({ text: `Текст:\n${rawText}` });
+      const textItems = await extractItemsFromSource(key, { text: rawText });
+      allItems.push(...textItems);
     }
 
-    if (imageFile) {
-      const base64 = await fileToBase64(imageFile);
-      parts.push({ inline_data: { mime_type: imageFile.type || "image/jpeg", data: base64 } });
+    for (const file of files) {
+      const li = document.createElement("li");
+      li.textContent = `${file.name}: ${t("aiFileQueued")}`;
+      statusEl.appendChild(li);
+
+      try {
+        li.className = "loading";
+        li.textContent = `${file.name}: ${t("aiFileLoading")}`;
+
+        const base64 = await fileToBase64(file);
+        const fileItems = await extractItemsFromSource(key, {
+          image: {
+            mimeType: file.type || "image/jpeg",
+            data: base64
+          }
+        });
+
+        allItems.push(...fileItems);
+        li.className = "done";
+        li.textContent = `${file.name}: ${t("aiFileDone")} (${fileItems.length})`;
+      } catch (error) {
+        li.className = "error";
+        li.textContent = `${file.name}: ${t("aiFileError")} (${error.message})`;
+      }
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ role: "user", parts }] })
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(errText || response.statusText);
+    const lines = itemsToLines(allItems);
+    if (appendToTextarea && lines.length > 0) {
+      const merged = mergeLines(textInput.value, lines);
+      textInput.value = merged.join("\n");
+      alert(t("aiDone"));
     }
 
-    const data = await response.json();
-    const output = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("\n") || "";
-    const extracted = parseJsonFromText(output);
-
-    const lines = extracted
-      .filter((item) => item && item.address)
-      .map((item) => {
-        const type = (item.type || "").toUpperCase();
-        if (type === "К") return `[К] ${item.name ? `${item.name} ` : ""}${item.address}`.trim();
-        if (type === "У") return `[У] ${item.name ? `${item.name} ` : ""}${item.address}`.trim();
-        return `[Ч] ${item.address}`;
-      });
-
-    if (lines.length > 0) {
-      const existing = textInput.value.trim();
-      textInput.value = existing ? `${existing}\n${lines.join("\n")}` : lines.join("\n");
-    }
-
-    alert(t("aiDone"));
+    return lines;
   } catch (error) {
     alert(t("aiFail") + error.message);
+    return [];
   }
 }
 
-function parseJsonFromText(text) {
+async function extractItemsFromSource(key, source) {
+  const prompt = [
+    "Верни только JSON-массив объектов.",
+    "Формат каждого объекта: {\"type\":\"Ч|У|К\",\"name\":\"...\",\"address\":\"...\"}.",
+    "Если это клиника/учреждение - обязательно заполни и name, и address.",
+    "Если частный адрес - type Ч, name пусто, address обязательно.",
+    "Никогда не оставляй только 'Praxis' без адреса."
+  ].join("\n");
+
+  const parts = [{ text: prompt }];
+  if (source.text) {
+    parts.push({ text: `Текст:\n${source.text}` });
+  }
+  if (source.image) {
+    parts.push({ inline_data: { mime_type: source.image.mimeType, data: source.image.data } });
+  }
+
+  const output = await generateGeminiText(key, parts);
+  return parseItemsFromText(output);
+}
+
+async function generateGeminiText(key, parts) {
+  const model = await resolveGeminiModel(key);
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${encodeURIComponent(key)}`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contents: [{ role: "user", parts }] })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(errText || response.statusText);
+  }
+
+  const data = await response.json();
+  return data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n") || "";
+}
+
+async function resolveGeminiModel(key) {
+  if (resolvedGeminiModel) return resolvedGeminiModel;
+
+  const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
+  const response = await fetch(listUrl);
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(txt || "Failed to list Gemini models");
+  }
+
+  const data = await response.json();
+  const available = (data.models || [])
+    .filter((model) => (model.supportedGenerationMethods || []).includes("generateContent"))
+    .map((model) => model.name);
+
+  const selected = GEMINI_MODEL_PREFERENCE.find((candidate) => available.includes(candidate)) || available[0];
+  if (!selected) {
+    throw new Error("No Gemini model with generateContent support found");
+  }
+
+  resolvedGeminiModel = selected;
+  return selected;
+}
+
+function parseItemsFromText(text) {
   const cleaned = text.replace(/```json|```/g, "").trim();
   const start = cleaned.indexOf("[");
   const end = cleaned.lastIndexOf("]");
   if (start < 0 || end < 0 || end <= start) return [];
-  const jsonText = cleaned.slice(start, end + 1);
+
   try {
-    return JSON.parse(jsonText);
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
+}
+
+function parseStringArrayFromText(text) {
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  const start = cleaned.indexOf("[");
+  const end = cleaned.lastIndexOf("]");
+  if (start < 0 || end < 0 || end <= start) return [];
+
+  try {
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string" && item.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
+function itemsToLines(items) {
+  return items
+    .filter((item) => item && item.address)
+    .map((item) => {
+      const type = (item.type || "Ч").toUpperCase();
+      const normalizedAddress = normalizeInputAddress(item.address);
+      const normalizedName = (item.name || "").trim();
+
+      if (type === "К") {
+        return `[К] ${normalizedName ? `${normalizedName}, ` : ""}${normalizedAddress}`;
+      }
+
+      if (type === "У") {
+        return `[У] ${normalizedName ? `${normalizedName}, ` : ""}${normalizedAddress}`;
+      }
+
+      return `[Ч] ${normalizedAddress}`;
+    });
+}
+
+function mergeLines(existingText, extraLines) {
+  const initial = existingText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const merged = [...initial, ...extraLines];
+  return Array.from(new Set(merged));
 }
 
 function fileToBase64(file) {
